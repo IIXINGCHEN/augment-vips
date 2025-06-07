@@ -1,22 +1,22 @@
 # VSCodeDiscovery.psm1
 #
-# Description: VS Code installation discovery module
-# Automatically detects standard, Insiders, and portable VS Code installations
+# Description: VS Code installation discovery module with production-verified methods
+# Based on augment-vip-powershell implementation
 #
 # Author: Augment VIP Project
 # Version: 1.0.0
 
-# Import Logger module
+# Import required modules
 Import-Module (Join-Path $PSScriptRoot "Logger.psm1") -Force
 
 # VS Code installation types
 enum VSCodeType {
-    Standard = 0
-    Insiders = 1
-    Portable = 2
+    Standard
+    Insiders
+    Portable
 }
 
-# VS Code installation information class
+# VS Code installation class
 class VSCodeInstallation {
     [VSCodeType]$Type
     [string]$Name
@@ -25,23 +25,21 @@ class VSCodeInstallation {
     [string]$UserDataPath
     [string]$StorageJsonPath
     [string[]]$DatabasePaths
-    [bool]$IsValid
     [string]$Version
+    [bool]$IsValid
     
     VSCodeInstallation([VSCodeType]$type, [string]$name, [string]$path) {
         $this.Type = $type
         $this.Name = $name
         $this.Path = $path
-        $this.IsValid = $false
         $this.DatabasePaths = @()
+        $this.IsValid = $false
     }
 }
 
 <#
 .SYNOPSIS
-    Discovers all VS Code installations on the system
-.DESCRIPTION
-    Scans for standard, Insiders, and portable VS Code installations
+    Discovers all VS Code installations on the system using production-verified logic
 .PARAMETER IncludePortable
     Include portable installations in the search
 .OUTPUTS
@@ -53,22 +51,39 @@ function Find-VSCodeInstallations {
         [switch]$IncludePortable = $true
     )
     
-    Write-LogInfo "Discovering VS Code installations..."
+    Write-LogInfo "Discovering VS Code installations using production-tested logic..."
     
     $installations = @()
     
-    # Find standard installations
-    $installations += Find-StandardVSCode
+    # Use production-verified method to check for VS Code data directories
+    $appData = $env:APPDATA
+    $localAppData = $env:LOCALAPPDATA
     
-    # Find Insiders installations
-    $installations += Find-InsidersVSCode
+    Write-LogDebug "AppData path: $appData"
+    Write-LogDebug "LocalAppData path: $localAppData"
     
-    # Find portable installations
+    # Check for standard VS Code
+    $codePath = Join-Path $appData "Code"
+    if (Test-Path $codePath) {
+        Write-LogDebug "Found VS Code data directory at: $codePath"
+        $installation = [VSCodeInstallation]::new([VSCodeType]::Standard, "VS Code", "Standard Installation")
+        $installations += $installation
+    }
+    
+    # Check for VS Code Insiders
+    $codeInsidersPath = Join-Path $appData "Code - Insiders"
+    if (Test-Path $codeInsidersPath) {
+        Write-LogDebug "Found VS Code Insiders data directory at: $codeInsidersPath"
+        $installation = [VSCodeInstallation]::new([VSCodeType]::Insiders, "VS Code Insiders", "Insiders Installation")
+        $installations += $installation
+    }
+    
+    # Check for portable installations if enabled
     if ($IncludePortable) {
         $installations += Find-PortableVSCode
     }
     
-    # Validate and populate installation details
+    # Complete installation information
     foreach ($installation in $installations) {
         Complete-InstallationInfo -Installation $installation
     }
@@ -77,7 +92,7 @@ function Find-VSCodeInstallations {
     
     Write-LogInfo "Found $($validInstallations.Count) valid VS Code installation(s)"
     foreach ($install in $validInstallations) {
-        Write-LogSuccess "$($install.Name) - $($install.Path)"
+        Write-LogSuccess "$($install.Name) - Data: $($install.DataPath)"
     }
     
     return $validInstallations
@@ -188,26 +203,6 @@ function Find-PortableVSCode {
         }
     }
     
-    # Search in common drive roots (limited to C: and D: for security)
-    $allowedDrives = @("C", "D")
-    $drives = Get-PSDrive -PSProvider FileSystem | Where-Object { $_.Name -in $allowedDrives -and $_.Used -gt 0 }
-    foreach ($drive in $drives) {
-        $driveRoot = "$($drive.Name):\"
-        $portablePaths = @(
-            (Join-Path $driveRoot "VSCode"),
-            (Join-Path $driveRoot "Code"),
-            (Join-Path $driveRoot "PortableApps\VSCode")
-        )
-
-        foreach ($path in $portablePaths) {
-            # Validate path to prevent traversal attacks
-            if ((Test-Path $path) -and $path.StartsWith($driveRoot)) {
-                $portableInstalls = Find-PortableInDirectory -Directory $path
-                $installations += $portableInstalls
-            }
-        }
-    }
-    
     return $installations
 }
 
@@ -305,7 +300,7 @@ function Complete-InstallationInfo {
 
 <#
 .SYNOPSIS
-    Finds database files for a VS Code installation
+    Finds database files for a VS Code installation using production-tested patterns
 .PARAMETER DataPath
     VS Code data directory path
 .OUTPUTS
@@ -317,36 +312,46 @@ function Find-DatabaseFiles {
         [Parameter(Mandatory = $true)]
         [string]$DataPath
     )
-    
+
     $databasePaths = @()
-    
+
     if (-not (Test-Path $DataPath)) {
+        Write-LogDebug "Data path does not exist: $DataPath"
         return $databasePaths
     }
-    
-    # Database file patterns
+
+    # Use production-verified database file patterns
     $patterns = @(
+        # Workspace storage
         "User\workspaceStorage\*\state.vscdb",
         "User\globalStorage\*\state.vscdb",
+        # Cache
         "Cache\*\*.vscdb",
         "CachedData\*\*.vscdb",
+        # Logs
         "logs\*\*.vscdb",
-        "User\*\*.vscdb"
+        # Other database files
+        "User\*\*.vscdb",
+        "User\workspaceStorage\*\*.vscdb",
+        "User\globalStorage\*\*.vscdb"
     )
-    
+
     foreach ($pattern in $patterns) {
         $fullPattern = Join-Path $DataPath $pattern
         try {
             $files = Get-ChildItem -Path $fullPattern -ErrorAction SilentlyContinue
             foreach ($file in $files) {
                 $databasePaths += $file.FullName
+                Write-LogDebug "Found database file: $($file.FullName)"
             }
         }
         catch {
             # Ignore errors for missing paths
+            Write-LogDebug "Pattern not found: $fullPattern"
         }
     }
-    
+
+    Write-LogDebug "Found $($databasePaths.Count) database files in $DataPath"
     return $databasePaths
 }
 
@@ -364,7 +369,7 @@ function Get-VSCodeVersion {
         [Parameter(Mandatory = $true)]
         [string]$InstallPath
     )
-    
+
     try {
         # Try to get version from package.json
         $packageJson = Join-Path $InstallPath "resources\app\package.json"
@@ -372,7 +377,7 @@ function Get-VSCodeVersion {
             $package = Get-Content $packageJson | ConvertFrom-Json
             return $package.version
         }
-        
+
         # Try to get version from executable
         $codeExe = Get-ChildItem -Path $InstallPath -Filter "Code*.exe" | Select-Object -First 1
         if ($codeExe) {
@@ -381,7 +386,7 @@ function Get-VSCodeVersion {
                 return $version
             }
         }
-        
+
         return "Unknown"
     }
     catch {
@@ -403,25 +408,20 @@ function Test-InstallationValidity {
         [Parameter(Mandatory = $true)]
         [VSCodeInstallation]$Installation
     )
-    
-    # Check if executable exists
-    $exeNames = @("Code.exe", "Code - Insiders.exe")
-    $hasExecutable = $false
-    
-    foreach ($exeName in $exeNames) {
-        $exePath = Join-Path $Installation.Path $exeName
-        if (Test-Path $exePath) {
-            $hasExecutable = $true
-            break
-        }
-    }
-    
-    if (-not $hasExecutable) {
-        Write-LogDebug "$($Installation.Name): No executable found"
+
+    # Check if data directory exists (most reliable method)
+    if (-not (Test-Path $Installation.DataPath)) {
+        Write-LogDebug "$($Installation.Name): Data directory not found at $($Installation.DataPath)"
         return $false
     }
-    
-    # For portable installations, check data directory
+
+    # Check if User directory exists
+    if (-not (Test-Path $Installation.UserDataPath)) {
+        Write-LogDebug "$($Installation.Name): User data directory not found at $($Installation.UserDataPath)"
+        return $false
+    }
+
+    # For portable installations, check specific data directory structure
     if ($Installation.Type -eq [VSCodeType]::Portable) {
         $dataDir = Join-Path $Installation.Path "data"
         if (-not (Test-Path $dataDir)) {
@@ -429,7 +429,22 @@ function Test-InstallationValidity {
             return $false
         }
     }
-    
+
+    # Check if there are database files or storage.json file
+    $hasData = $false
+    if ($Installation.DatabasePaths.Count -gt 0) {
+        $hasData = $true
+    } elseif (Test-Path $Installation.StorageJsonPath) {
+        $hasData = $true
+    }
+
+    if (-not $hasData) {
+        Write-LogDebug "$($Installation.Name): No database files or storage.json found"
+        # Even without data files, consider valid if directory structure is correct
+        # return $false
+    }
+
+    Write-LogDebug "$($Installation.Name): Installation is valid"
     return $true
 }
 
@@ -447,9 +462,162 @@ function Get-VSCodeInstallation {
         [Parameter(Mandatory = $true)]
         [VSCodeType]$Type
     )
-    
+
     $installations = Find-VSCodeInstallations
     return $installations | Where-Object { $_.Type -eq $Type } | Select-Object -First 1
+}
+
+<#
+.SYNOPSIS
+    Gets VS Code database file paths using production-verified method
+.OUTPUTS
+    string[] - Array of database file path patterns
+#>
+function Get-VSCodeDatabasePaths {
+    $paths = @()
+
+    # Windows paths
+    $appData = $env:APPDATA
+    $localAppData = $env:LOCALAPPDATA
+
+    # Check AppData paths
+    $codePath = Join-Path $appData "Code"
+    if (Test-Path $codePath) {
+        $paths += @(
+            # Workspace storage
+            (Join-Path $codePath "User\workspaceStorage\*\state.vscdb"),
+            (Join-Path $codePath "User\globalStorage\*\state.vscdb"),
+            # Cache
+            (Join-Path $codePath "Cache\*\*.vscdb"),
+            (Join-Path $codePath "CachedData\*\*.vscdb"),
+            # Logs
+            (Join-Path $codePath "logs\*\*.vscdb"),
+            # Other database files
+            (Join-Path $codePath "User\*\*.vscdb"),
+            (Join-Path $codePath "User\workspaceStorage\*\*.vscdb"),
+            (Join-Path $codePath "User\globalStorage\*\*.vscdb")
+        )
+    }
+
+    # Check LocalAppData paths
+    $codePath = Join-Path $localAppData "Programs\Microsoft VS Code"
+    if (Test-Path $codePath) {
+        $paths += @(
+            (Join-Path $codePath "resources\app\out\vs\workbench\workbench.desktop.main.js"),
+            (Join-Path $codePath "resources\app\out\vs\workbench\workbench.desktop.main.js.map")
+        )
+    }
+
+    # Check Insiders version
+    $codeInsidersPath = Join-Path $appData "Code - Insiders"
+    if (Test-Path $codeInsidersPath) {
+        $paths += @(
+            (Join-Path $codeInsidersPath "User\workspaceStorage\*\state.vscdb"),
+            (Join-Path $codeInsidersPath "User\globalStorage\*\state.vscdb"),
+            (Join-Path $codeInsidersPath "Cache\*\*.vscdb"),
+            (Join-Path $codeInsidersPath "CachedData\*\*.vscdb"),
+            (Join-Path $codeInsidersPath "logs\*\*.vscdb"),
+            (Join-Path $codeInsidersPath "User\*\*.vscdb"),
+            (Join-Path $codeInsidersPath "User\workspaceStorage\*\*.vscdb"),
+            (Join-Path $codeInsidersPath "User\globalStorage\*\*.vscdb")
+        )
+    }
+
+    return $paths
+}
+
+<#
+.SYNOPSIS
+    Gets VS Code storage.json file path using production-verified method
+.OUTPUTS
+    string - Path to storage.json file or null if not found
+#>
+function Get-VSCodeStoragePath {
+    $paths = @()
+
+    # Standard paths
+    $appData = $env:APPDATA
+    $localAppData = $env:LOCALAPPDATA
+
+    Write-LogInfo "Checking VS Code storage locations..."
+    Write-LogInfo "AppData path: $appData"
+    Write-LogInfo "LocalAppData path: $localAppData"
+
+    # Check standard paths
+    $paths += @(
+        # User directory files
+        (Join-Path $appData "Code\User\storage.json"),
+        (Join-Path $appData "Code\User\globalStorage\storage.json"),
+        (Join-Path $localAppData "Code\User\storage.json"),
+        (Join-Path $localAppData "Code\User\globalStorage\storage.json"),
+        # Insiders version
+        (Join-Path $appData "Code - Insiders\User\storage.json"),
+        (Join-Path $appData "Code - Insiders\User\globalStorage\storage.json"),
+        (Join-Path $localAppData "Code - Insiders\User\storage.json"),
+        (Join-Path $localAppData "Code - Insiders\User\globalStorage\storage.json"),
+        # Other possible storage locations
+        (Join-Path $appData "Code\User\workspaceStorage\*\storage.json"),
+        (Join-Path $appData "Code\User\workspaceStorage\*\globalStorage\storage.json"),
+        (Join-Path $localAppData "Code\User\workspaceStorage\*\storage.json"),
+        (Join-Path $localAppData "Code\User\workspaceStorage\*\globalStorage\storage.json"),
+        # Cache files
+        (Join-Path $appData "Code\Cache\*\storage.json"),
+        (Join-Path $localAppData "Code\Cache\*\storage.json"),
+        # Log files
+        (Join-Path $appData "Code\logs\*\storage.json"),
+        (Join-Path $localAppData "Code\logs\*\storage.json")
+    )
+
+    # Check portable paths
+    $portablePaths = @(
+        ".\data\user-data\User\storage.json",
+        ".\data\user-data\User\globalStorage\storage.json",
+        ".\user-data\User\storage.json",
+        ".\user-data\User\globalStorage\storage.json"
+    )
+
+    foreach ($path in $portablePaths) {
+        if (Test-Path $path) {
+            $paths += $path
+        }
+    }
+
+    # Check all possible paths
+    foreach ($path in $paths) {
+        Write-LogInfo "Checking path: $path"
+        if (Test-Path $path) {
+            Write-LogSuccess "Found VS Code storage.json at: $path"
+            return $path
+        }
+    }
+
+    # If no file found, try searching entire VS Code directories
+    Write-LogInfo "Searching for storage.json in VS Code directories..."
+    $codeDirs = @(
+        (Join-Path $appData "Code"),
+        (Join-Path $localAppData "Code"),
+        (Join-Path $appData "Code - Insiders"),
+        (Join-Path $localAppData "Code - Insiders")
+    )
+
+    foreach ($dir in $codeDirs) {
+        if (Test-Path $dir) {
+            Write-LogInfo "Searching in: $dir"
+            $foundFiles = Get-ChildItem -Path $dir -Recurse -Filter "storage.json" -ErrorAction SilentlyContinue
+            if ($foundFiles) {
+                foreach ($file in $foundFiles) {
+                    Write-LogSuccess "Found storage.json at: $($file.FullName)"
+                    return $file.FullName
+                }
+            }
+        }
+    }
+
+    Write-LogWarning "VS Code storage.json not found in any of the following locations:"
+    foreach ($path in $paths) {
+        Write-LogWarning "  - $path"
+    }
+    return $null
 }
 
 # Export module functions
@@ -458,5 +626,7 @@ Export-ModuleMember -Function @(
     'Find-StandardVSCode',
     'Find-InsidersVSCode',
     'Find-PortableVSCode',
-    'Get-VSCodeInstallation'
+    'Get-VSCodeInstallation',
+    'Get-VSCodeDatabasePaths',
+    'Get-VSCodeStoragePath'
 )

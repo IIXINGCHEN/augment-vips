@@ -203,11 +203,30 @@ function Test-Prerequisites {
 #>
 function Get-VSCodeData {
     Write-LogInfo "Discovering VS Code installations..."
-    
-    # Find all VS Code installations
+
+    # Use production-verified method to get database paths
+    $databasePathPatterns = Get-VSCodeDatabasePaths
+    $allDatabasePaths = @()
+
+    # Expand patterns to actual files
+    foreach ($pattern in $databasePathPatterns) {
+        $files = Get-ChildItem -Path $pattern -ErrorAction SilentlyContinue
+        foreach ($file in $files) {
+            $allDatabasePaths += $file.FullName
+        }
+    }
+
+    # Use production-verified method to get storage.json path
+    $storagePath = Get-VSCodeStoragePath
+    $allStorageJsonPaths = @()
+    if ($storagePath) {
+        $allStorageJsonPaths += $storagePath
+    }
+
+    # Also try to find installations using the original method for compatibility
     $installations = Find-VSCodeInstallations -IncludePortable:$IncludePortable
-    
-    if ($installations.Count -eq 0) {
+
+    if ($installations.Count -eq 0 -and $allDatabasePaths.Count -eq 0) {
         Write-LogWarning "No VS Code installations found"
         return @{
             Installations = @()
@@ -215,26 +234,15 @@ function Get-VSCodeData {
             StorageJsonPaths = @()
         }
     }
-    
-    # Collect database and storage paths
-    $allDatabasePaths = @()
-    $allStorageJsonPaths = @()
-    
+
+    # Report findings
     foreach ($installation in $installations) {
         Write-LogInfo "Found: $($installation.Name) at $($installation.Path)"
-        
-        # Add database paths
-        $allDatabasePaths += $installation.DatabasePaths
-        
-        # Add storage.json path if it exists
-        if ($installation.StorageJsonPath -and (Test-Path $installation.StorageJsonPath)) {
-            $allStorageJsonPaths += $installation.StorageJsonPath
-        }
     }
-    
+
     Write-LogInfo "Total database files found: $($allDatabasePaths.Count)"
     Write-LogInfo "Total storage.json files found: $($allStorageJsonPaths.Count)"
-    
+
     return @{
         Installations = $installations
         DatabasePaths = $allDatabasePaths
@@ -267,20 +275,22 @@ function Invoke-DatabaseCleaning {
     }
     
     if ($PSCmdlet.ShouldProcess("$($DatabasePaths.Count) database files", "Clean Augment entries")) {
-        $results = Clear-VSCodeDatabases -DatabasePaths $DatabasePaths -CreateBackup $CreateBackup
-        
-        # Report results
-        $successCount = ($results | Where-Object { $_.Success }).Count
-        $totalEntriesRemoved = ($results | Measure-Object -Property TotalEntriesRemoved -Sum).Sum
-        
+        # Use production-verified method for cleaning
+        $successCount = 0
+        $failCount = 0
+
+        foreach ($dbPath in $DatabasePaths) {
+            if (Clear-DatabaseProductionMethod -DatabasePath $dbPath -CreateBackup $CreateBackup) {
+                $successCount++
+            } else {
+                $failCount++
+            }
+        }
+
         Write-LogSuccess "Database cleaning completed"
         Write-LogInfo "Successfully cleaned: $successCount/$($DatabasePaths.Count) databases"
-        Write-LogInfo "Total entries removed: $totalEntriesRemoved"
-        
-        # Show failed operations
-        $failedResults = $results | Where-Object { -not $_.Success }
-        foreach ($failed in $failedResults) {
-            Write-LogError "Failed to clean: $($failed.DatabasePath) - $($failed.ErrorMessage)"
+        if ($failCount -gt 0) {
+            Write-LogWarning "Failed to clean: $failCount databases"
         }
     }
 }
@@ -310,20 +320,22 @@ function Invoke-TelemetryModification {
     }
     
     if ($PSCmdlet.ShouldProcess("$($StorageJsonPaths.Count) storage.json files", "Modify telemetry IDs")) {
-        $results = Set-VSCodeTelemetryIdsMultiple -StorageJsonPaths $StorageJsonPaths -CreateBackup $CreateBackup
-        
-        # Report results
-        $successCount = ($results | Where-Object { $_.Success }).Count
-        $totalIdsModified = ($results | Where-Object { $_.Success } | ForEach-Object { $_.NewIds.Count } | Measure-Object -Sum).Sum
-        
+        # Use production-verified method for telemetry modification
+        $successCount = 0
+        $failCount = 0
+
+        foreach ($storagePath in $StorageJsonPaths) {
+            if (Set-TelemetryIdsProductionMethod -StoragePath $storagePath -CreateBackup $CreateBackup) {
+                $successCount++
+            } else {
+                $failCount++
+            }
+        }
+
         Write-LogSuccess "Telemetry ID modification completed"
         Write-LogInfo "Successfully modified: $successCount/$($StorageJsonPaths.Count) files"
-        Write-LogInfo "Total IDs modified: $totalIdsModified"
-        
-        # Show failed operations
-        $failedResults = $results | Where-Object { -not $_.Success }
-        foreach ($failed in $failedResults) {
-            Write-LogError "Failed to modify: $($failed.StoragePath) - $($failed.ErrorMessage)"
+        if ($failCount -gt 0) {
+            Write-LogWarning "Failed to modify: $failCount files"
         }
     }
 }
@@ -366,23 +378,28 @@ function Invoke-Main {
         
         # Get VS Code data
         $vscodeData = Get-VSCodeData
-        
-        if ($vscodeData.Installations.Count -eq 0) {
-            Write-LogError "No VS Code installations found. Nothing to do."
+
+        if ($vscodeData.Installations.Count -eq 0 -and $vscodeData.DatabasePaths.Count -eq 0 -and $vscodeData.StorageJsonPaths.Count -eq 0) {
+            Write-LogError "No VS Code installations or data found. Nothing to do."
+            return
+        }
+
+        if ($vscodeData.DatabasePaths.Count -eq 0 -and $vscodeData.StorageJsonPaths.Count -eq 0) {
+            Write-LogError "No VS Code database files or storage.json files found. Nothing to do."
             return
         }
         
         # Perform operations based on parameters
         if ($All -or $Clean) {
-            Invoke-DatabaseCleaning -DatabasePaths $vscodeData.DatabasePaths -CreateBackup $CreateBackup -WhatIf:$WhatIf -Preview:$Preview
+            Invoke-DatabaseCleaning -DatabasePaths $vscodeData.DatabasePaths -CreateBackup $CreateBackup -WhatIf:$WhatIfPreference -Preview:$Preview
         }
 
         if ($All -or $ModifyTelemetry) {
-            Invoke-TelemetryModification -StorageJsonPaths $vscodeData.StorageJsonPaths -CreateBackup $CreateBackup -WhatIf:$WhatIf -Preview:$Preview
+            Invoke-TelemetryModification -StorageJsonPaths $vscodeData.StorageJsonPaths -CreateBackup $CreateBackup -WhatIf:$WhatIfPreference -Preview:$Preview
         }
 
         # Show backup statistics
-        if ($CreateBackup -and -not ($Preview -or $WhatIf)) {
+        if ($CreateBackup -and -not ($Preview -or $WhatIfPreference)) {
             Show-BackupStatistics
         }
         

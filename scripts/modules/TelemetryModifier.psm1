@@ -441,6 +441,101 @@ function New-TelemetryIdPreview {
     return $previewIds
 }
 
+<#
+.SYNOPSIS
+    Modifies telemetry IDs using production-verified method
+.PARAMETER StoragePath
+    Path to the VS Code storage.json file
+.PARAMETER CreateBackup
+    Create backup before modification (default: true)
+.OUTPUTS
+    bool - True if modification was successful
+#>
+function Set-TelemetryIdsProductionMethod {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$StoragePath,
+        [bool]$CreateBackup = $true
+    )
+
+    try {
+        # Check if file exists
+        if (-not (Test-Path $StoragePath)) {
+            Write-LogWarning "Storage file not found: $StoragePath"
+            return $false
+        }
+
+        # Create backup if requested
+        if ($CreateBackup) {
+            $backupPath = "$StoragePath.backup"
+            try {
+                Copy-Item -Path $StoragePath -Destination $backupPath -Force
+                Write-LogSuccess "Created backup: $backupPath"
+            } catch {
+                Write-LogError "Failed to create backup for: $StoragePath"
+                return $false
+            }
+        }
+
+        # Read current configuration
+        $content = Get-Content -Path $StoragePath -Raw | ConvertFrom-Json
+
+        # Generate new IDs using production-verified method
+        $newMachineId = Generate-RandomId
+        $newDeviceId = Generate-UUIDv4
+        $newSqmId = Generate-UUIDv4
+
+        # Update IDs (Windows format)
+        $content."telemetry.machineId" = $newMachineId
+        $content."telemetry.devDeviceId" = $newDeviceId
+        $content."telemetry.sqmId" = $newSqmId
+
+        # Save changes
+        $content | ConvertTo-Json -Depth 10 | Set-Content -Path $StoragePath
+
+        Write-LogSuccess "Updated telemetry IDs in: $StoragePath"
+        Write-LogInfo "New telemetry.machineId: $newMachineId"
+        Write-LogInfo "New telemetry.devDeviceId: $newDeviceId"
+        Write-LogInfo "New telemetry.sqmId: $newSqmId"
+
+        return $true
+    } catch {
+        Write-LogError "Failed to modify telemetry IDs: $StoragePath"
+        Write-LogError $_.Exception.Message
+        return $false
+    }
+}
+
+<#
+.SYNOPSIS
+    Generates a random ID using production-verified method
+.OUTPUTS
+    string - Random hex string
+#>
+function Generate-RandomId {
+    param(
+        [int]$Length = 64
+    )
+
+    $bytes = New-Object byte[] $Length
+    $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+    $rng.GetBytes($bytes)
+
+    return [System.BitConverter]::ToString($bytes).Replace("-", "").ToLower()
+}
+
+<#
+.SYNOPSIS
+    Generates a UUID v4 using production-verified method
+.OUTPUTS
+    string - UUID v4 string
+#>
+function Generate-UUIDv4 {
+    $guid = [System.Guid]::NewGuid()
+    return $guid.ToString()
+}
+
 # Export module functions
 Export-ModuleMember -Function @(
     'Set-VSCodeTelemetryIds',
@@ -451,5 +546,8 @@ Export-ModuleMember -Function @(
     'Test-StorageJsonValidity',
     'Get-CurrentTelemetryIds',
     'Show-TelemetryModificationPreview',
-    'New-TelemetryIdPreview'
+    'New-TelemetryIdPreview',
+    'Set-TelemetryIdsProductionMethod',
+    'Generate-RandomId',
+    'Generate-UUIDv4'
 )

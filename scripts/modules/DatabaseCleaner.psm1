@@ -512,6 +512,77 @@ function Show-CleaningPreview {
     Write-LogInfo "==============="
 }
 
+<#
+.SYNOPSIS
+    Cleans database using production-verified method
+.PARAMETER DatabasePath
+    Path to the SQLite database file
+.PARAMETER CreateBackup
+    Create backup before cleaning (default: true)
+.OUTPUTS
+    bool - True if cleaning was successful
+#>
+function Clear-DatabaseProductionMethod {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$DatabasePath,
+        [bool]$CreateBackup = $true
+    )
+
+    try {
+        # Check if database file exists
+        if (-not (Test-Path $DatabasePath)) {
+            Write-LogWarning "Database file not found: $DatabasePath"
+            return $false
+        }
+
+        # Create backup if requested (using simple .backup method)
+        if ($CreateBackup) {
+            $backupPath = "$DatabasePath.backup"
+            try {
+                Copy-Item -Path $DatabasePath -Destination $backupPath -Force
+                Write-LogSuccess "Created backup: $backupPath"
+            } catch {
+                Write-LogError "Failed to create backup for: $DatabasePath"
+                return $false
+            }
+        }
+
+        # Use production-verified SQL queries - complete version from augment-vip-powershell
+        $tempFile = [System.IO.Path]::GetTempFileName()
+        $query = @"
+DELETE FROM ItemTable WHERE key LIKE '%augment%';
+DELETE FROM ItemTable WHERE key LIKE '%telemetry%';
+DELETE FROM ItemTable WHERE key LIKE '%machineId%';
+DELETE FROM ItemTable WHERE key LIKE '%deviceId%';
+DELETE FROM ItemTable WHERE key LIKE '%sqmId%';
+DELETE FROM ItemTable WHERE key LIKE '%uuid%';
+DELETE FROM ItemTable WHERE key LIKE '%session%';
+DELETE FROM ItemTable WHERE key LIKE '%lastSessionDate%';
+DELETE FROM ItemTable WHERE key LIKE '%lastSyncDate%';
+DELETE FROM ItemTable WHERE key LIKE '%lastSyncMachineId%';
+DELETE FROM ItemTable WHERE key LIKE '%lastSyncDeviceId%';
+DELETE FROM ItemTable WHERE key LIKE '%lastSyncSqmId%';
+DELETE FROM ItemTable WHERE key LIKE '%lastSyncUuid%';
+DELETE FROM ItemTable WHERE key LIKE '%lastSyncSession%';
+DELETE FROM ItemTable WHERE key LIKE '%lastSyncLastSessionDate%';
+DELETE FROM ItemTable WHERE key LIKE '%lastSyncLastSyncDate%';
+VACUUM;
+"@
+
+        # Execute SQLite command using production-verified method
+        sqlite3 $DatabasePath $query
+
+        Write-LogSuccess "Cleaned database: $DatabasePath"
+        return $true
+    } catch {
+        Write-LogError "Failed to clean database: $DatabasePath"
+        Write-LogError $_.Exception.Message
+        return $false
+    }
+}
+
 # Export module functions
 Export-ModuleMember -Function @(
     'Clear-VSCodeDatabase',
@@ -519,5 +590,6 @@ Export-ModuleMember -Function @(
     'Get-DatabaseAnalysis',
     'Show-CleaningPreview',
     'Test-DatabaseConnectivity',
-    'Optimize-Database'
+    'Optimize-Database',
+    'Clear-DatabaseProductionMethod'
 )
