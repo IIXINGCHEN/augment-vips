@@ -2,6 +2,28 @@
 
 A comprehensive PowerShell solution for cleaning VS Code data and modifying telemetry identifiers with full backup and recovery capabilities.
 
+## 🙏 致谢 / Acknowledgments
+
+本项目基于 [azrilaiman2003/augment-vip](https://github.com/azrilaiman2003/augment-vip) 进行二次开发和优化。
+
+**感谢原作者的贡献！** 我们在原项目基础上进行了以下重大改进：
+- ✅ **Windows系统完整支持** - 专门为Windows 10+系统优化
+- ✅ **PowerShell模块化架构** - 企业级代码结构
+- ✅ **完整的备份恢复系统** - 安全可靠的操作保障
+- ✅ **多VS Code版本支持** - 标准版、Insiders版、便携版
+- ✅ **企业级安全特性** - SQL注入防护、加密安全随机数生成
+- ✅ **完整的文档系统** - 详细的使用指南和API文档
+
+This project is based on [azrilaiman2003/augment-vip](https://github.com/azrilaiman2003/augment-vip) with significant enhancements and optimizations.
+
+**Thanks to the original author!** We have made the following major improvements:
+- ✅ **Complete Windows Support** - Optimized for Windows 10+ systems
+- ✅ **PowerShell Modular Architecture** - Enterprise-grade code structure
+- ✅ **Full Backup & Recovery System** - Safe and reliable operation guarantee
+- ✅ **Multi VS Code Version Support** - Standard, Insiders, and Portable editions
+- ✅ **Enterprise Security Features** - SQL injection protection, cryptographically secure random generation
+- ✅ **Complete Documentation System** - Detailed user guides and API documentation
+
 ## Features
 
 - **Database Cleaning**: Remove all Augment-related entries from VS Code SQLite databases

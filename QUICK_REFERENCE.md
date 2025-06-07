@@ -1,5 +1,9 @@
 # VS Code Cleanup Master - 快速参考
 
+## 🙏 致谢
+
+本项目基于 [azrilaiman2003/augment-vip](https://github.com/azrilaiman2003/augment-vip) 进行Windows系统优化开发。感谢原作者的贡献！
+
 ## 🚀 快速开始
 
 ### 基本命令

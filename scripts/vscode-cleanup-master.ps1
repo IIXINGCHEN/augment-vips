@@ -3,7 +3,9 @@
 # Description: Master VS Code cleanup script with comprehensive functionality
 # Integrates database cleaning, telemetry modification, and backup management
 #
-# Author: Augment VIP Project
+# Based on: https://github.com/azrilaiman2003/augment-vip
+# Enhanced for Windows systems with enterprise-grade features
+# Author: Augment VIP Project (Windows Enhancement)
 # Version: 1.0.0
 #
 # Usage: .\vscode-cleanup-master.ps1 [options]
@@ -104,6 +106,9 @@ function Show-Help {
     Write-Host @"
 VS Code Cleanup Master Script
 ============================
+
+Based on: https://github.com/azrilaiman2003/augment-vip
+Enhanced for Windows systems with enterprise-grade features
 
 Description:
   Comprehensive VS Code cleanup tool that removes Augment-related entries

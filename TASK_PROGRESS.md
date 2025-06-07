@@ -1,7 +1,18 @@
 # Task Progress Log
 
+## 🙏 项目致谢
+
+本项目基于 [azrilaiman2003/augment-vip](https://github.com/azrilaiman2003/augment-vip) 进行二次开发和优化。
+
+**感谢原作者 azrilaiman2003 的贡献！** 我们在原项目基础上进行了以下重大改进：
+- 专门为Windows 10+系统进行优化
+- 重构为企业级PowerShell模块化架构
+- 添加完整的备份恢复系统
+- 增强安全性和稳定性
+- 提供完整的文档和使用指南
+
 ## Task Description
-Create a PowerShell script that performs VS Code data cleanup and telemetry modification with comprehensive functionality including backup/restore capabilities, multi-installation support, and Context7 framework compatibility.
+基于原项目创建一个专门为Windows系统优化的PowerShell脚本，执行VS Code数据清理和遥测修改，包含备份/恢复功能、多安装支持和Context7框架兼容性。
 
 ## Implementation Progress
 

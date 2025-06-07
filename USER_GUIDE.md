@@ -1,7 +1,16 @@
 # VS Code Cleanup Master - 完整使用文档
 
+## 🙏 致谢 / Acknowledgments
+
+本项目基于 [azrilaiman2003/augment-vip](https://github.com/azrilaiman2003/augment-vip) 进行二次开发和优化。
+
+**感谢原作者 azrilaiman2003 的贡献！** 我们在原项目基础上专门为Windows系统进行了全面优化和功能增强，提供了企业级的PowerShell解决方案。
+
+This project is based on [azrilaiman2003/augment-vip](https://github.com/azrilaiman2003/augment-vip) with significant enhancements for Windows systems.
+
 ## 📋 目录
 
+- [致谢](#致谢--acknowledgments)
 - [概述](#概述)
 - [系统要求](#系统要求)
 - [安装指南](#安装指南)
