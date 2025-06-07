@@ -482,9 +482,9 @@ function Set-TelemetryIdsProductionMethod {
         $content = Get-Content -Path $StoragePath -Raw | ConvertFrom-Json
 
         # Generate new IDs using production-verified method
-        $newMachineId = Generate-RandomId
-        $newDeviceId = Generate-UUIDv4
-        $newSqmId = Generate-UUIDv4
+        $newMachineId = New-RandomId
+        $newDeviceId = New-UUIDv4
+        $newSqmId = New-UUIDv4
 
         # Update IDs (Windows format)
         $content."telemetry.machineId" = $newMachineId
@@ -513,7 +513,7 @@ function Set-TelemetryIdsProductionMethod {
 .OUTPUTS
     string - Random hex string
 #>
-function Generate-RandomId {
+function New-RandomId {
     param(
         [int]$Length = 64
     )
@@ -531,7 +531,7 @@ function Generate-RandomId {
 .OUTPUTS
     string - UUID v4 string
 #>
-function Generate-UUIDv4 {
+function New-UUIDv4 {
     $guid = [System.Guid]::NewGuid()
     return $guid.ToString()
 }
@@ -548,6 +548,6 @@ Export-ModuleMember -Function @(
     'Show-TelemetryModificationPreview',
     'New-TelemetryIdPreview',
     'Set-TelemetryIdsProductionMethod',
-    'Generate-RandomId',
-    'Generate-UUIDv4'
+    'New-RandomId',
+    'New-UUIDv4'
 )
