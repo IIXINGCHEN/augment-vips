@@ -236,14 +236,14 @@ foreach ($backup in $backups) {
 ### 脚本运行缓慢
 ```powershell
 # 跳过备份以提高速度（仅测试环境）
-.\scripts\vscode-cleanup-master.ps1 -All -NoBackup
-
-# 仅处理标准版VS Code
-.\scripts\vscode-cleanup-master.ps1 -All -IncludePortable:$false
+.\run.ps1 -Operation All -NoBackup
 
 # 分步执行
-.\scripts\vscode-cleanup-master.ps1 -Clean      # 仅清理数据库
-.\scripts\vscode-cleanup-master.ps1 -ModifyTelemetry  # 仅修改遥测
+.\run.ps1 -Operation Clean           # 仅清理数据库
+.\run.ps1 -Operation ModifyTelemetry # 仅修改遥测
+
+# 或直接使用Windows脚本（高级用法）
+.\scripts\windows\vscode-cleanup-master.ps1 -All -NoBackup
 ```
 
 ### 内存使用过高
@@ -266,10 +266,13 @@ $DebugPreference = "Continue"
 $VerbosePreference = "Continue"
 
 # 运行脚本
-.\scripts\vscode-cleanup-master.ps1 -All -Verbose
+.\run.ps1 -Operation All -VerboseOutput
+
+# 或直接使用Windows脚本
+.\scripts\windows\vscode-cleanup-master.ps1 -All -Verbose
 
 # 查看系统信息
-Import-Module .\scripts\modules\SystemDetection.psm1 -Force
+Import-Module .\scripts\windows\modules\SystemDetection.psm1 -Force
 Show-SystemInformation
 ```
 
@@ -317,7 +320,7 @@ Remove-Module Logger, SystemDetection, VSCodeDiscovery, BackupManager, DatabaseC
 Get-Variable | Where-Object { $_.Name -like "*vscode*" -or $_.Name -like "*backup*" } | Remove-Variable -Force -ErrorAction SilentlyContinue
 
 # 重新初始化
-.\scripts\vscode-cleanup-master.ps1 -Help
+.\run.ps1 -Help
 ```
 
 ### 从备份恢复

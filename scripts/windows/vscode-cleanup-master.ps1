@@ -40,7 +40,7 @@ $ErrorActionPreference = "Stop"
 # Get script directory and module path
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $ModulesDir = Join-Path $ScriptDir "modules"
-$ProjectRoot = Split-Path -Parent $ScriptDir
+$ProjectRoot = Split-Path -Parent (Split-Path -Parent $ScriptDir)
 
 # Import all required modules in dependency order
 $requiredModules = @(

@@ -1,6 +1,29 @@
 {
     "version": "1.0.0",
     "environment": "production",
+    "platform": {
+        "autoDetect": true,
+        "preferredImplementation": "auto",
+        "windows": {
+            "useNativeImplementation": true,
+            "fallbackToPython": true
+        },
+        "linux": {
+            "usePythonImplementation": true,
+            "vscodePaths": [
+                "~/.config/Code/User/",
+                "~/.vscode/",
+                "~/.config/Code - Insiders/User/"
+            ]
+        },
+        "macos": {
+            "usePythonImplementation": true,
+            "vscodePaths": [
+                "~/Library/Application Support/Code/User/",
+                "~/Library/Application Support/Code - Insiders/User/"
+            ]
+        }
+    },
     "backup": {
         "enabled": true,
         "retentionDays": 30,
@@ -24,7 +47,8 @@
         ],
         "customPatterns": [],
         "enableDatabaseCleaning": true,
-        "enableTelemetryModification": true
+        "enableTelemetryModification": true,
+        "checkVSCodeRunning": true
     },
     "telemetry": {
         "modifyIds": true,
@@ -41,11 +65,25 @@
     "discovery": {
         "includePortable": true,
         "searchPaths": [],
-        "enableProductionMethod": true
+        "enableProductionMethod": true,
+        "crossPlatformPaths": {
+            "windows": [
+                "%APPDATA%\\Code\\User\\",
+                "%LOCALAPPDATA%\\Programs\\Microsoft VS Code\\"
+            ],
+            "linux": [
+                "~/.config/Code/User/",
+                "~/.vscode/"
+            ],
+            "macos": [
+                "~/Library/Application Support/Code/User/"
+            ]
+        }
     },
     "features": {
         "autoCleanupBackups": true,
         "scatteredBackupCleanup": true,
-        "backupIntegrityCheck": true
+        "backupIntegrityCheck": true,
+        "crossPlatformSupport": true
     }
 }

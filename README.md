@@ -23,17 +23,25 @@
 - **回滚功能**: 需要时可从备份恢复
 - **系统兼容**: Windows 10+ 配合 PowerShell 5.1+
 
-## 系统要求
+## 🌍 跨平台系统要求
 
-### 最低要求
-- **操作系统**: Windows 10 或更高版本
-- **PowerShell**: 版本 5.1 或更高
-- **依赖项**: SQLite3, curl, jq (自动检查)
+### 支持的操作系统
+- **Windows**: PowerShell 5.1+ (主要) 或 Python 3.6+ (备用)
+- **Linux**: Python 3.6+ 和 bash
+- **macOS**: Python 3.6+ 和 bash
+
+### 通用要求
 - **磁盘空间**: 至少1GB可用空间用于备份操作
+- **权限**: 建议使用管理员/sudo权限
 
-### 推荐配置
-- 管理员权限以获得完整功能
+### Windows特定要求
 - PowerShell执行策略设置为RemoteSigned或Unrestricted
+- SQLite3, curl, jq (自动检查)
+
+### Linux/macOS特定要求
+- Python 3.6或更高版本
+- python3-venv (虚拟环境支持)
+- 基本的系统工具 (bash, chmod等)
 
 ### ⚠️ 重要：PowerShell执行策略设置
 Windows系统默认阻止运行未签名的PowerShell脚本。在运行本项目脚本前，您需要设置执行策略：
@@ -49,76 +57,103 @@ Get-ExecutionPolicy -List
 **如果仍然遇到执行策略错误，可以使用以下临时解决方案：**
 ```powershell
 # 方案1：临时绕过执行策略
-PowerShell -ExecutionPolicy Bypass -File .\scripts\install.ps1 --master --all
+PowerShell -ExecutionPolicy Bypass -File .\install.ps1 -Operation All
 
 # 方案2：解除文件阻止
-Unblock-File .\scripts\install.ps1
-Unblock-File .\scripts\vscode-cleanup-master.ps1
+Unblock-File .\install.ps1
+Unblock-File .\run.ps1
+Unblock-File .\scripts\augment-vip-launcher.ps1
+Unblock-File .\scripts\windows\vscode-cleanup-master.ps1
 ```
 
-## 安装指南
+## 🚀 跨平台安装指南
 
-### 快速安装
+### 一键安装 (推荐)
+```bash
+# 通用安装脚本 - 自动检测平台
+./install.sh --all
+
+# 预览操作
+./install.sh --preview
+
+# 仅清理数据库
+./install.sh --clean
+
+# 仅修改遥测ID
+./install.sh --modify-ids
+```
+
+### Windows安装
 ```powershell
 # 1. 设置PowerShell执行策略（首次运行必需）
 Set-ExecutionPolicy RemoteSigned -Scope CurrentUser
 
-# 2. 下载并运行安装脚本
-.\scripts\install.ps1 --master --all
+# 2. 使用快速启动脚本（推荐）
+.\run.ps1 -Operation All
+
+# 3. 或使用跨平台启动器
+.\scripts\augment-vip-launcher.ps1 -Operation All
+
+# 4. 或强制使用Python实现
+.\install.sh --python-only --all
 ```
 
-**如果遇到执行策略错误：**
-```powershell
-# 使用绕过模式运行
-PowerShell -ExecutionPolicy Bypass -File .\scripts\install.ps1 --master --all
+### Linux/macOS安装
+```bash
+# 使用通用安装脚本（推荐）
+./install.sh --all
+
+# 或直接使用Linux脚本
+./scripts/linux/install.sh --all
 ```
 
 ### 手动安装
 1. 克隆或下载仓库
 2. 导航到项目根目录
-3. 使用所需选项运行安装脚本
+3. 根据平台选择合适的安装方式
 
 ## 使用方法
 
 ### 主脚本 (推荐)
 ```powershell
-# 清理数据库并修改遥测ID
-.\scripts\vscode-cleanup-master.ps1 -All
+# 使用快速启动脚本（推荐）
+.\run.ps1 -Operation All
 
 # 预览操作而不执行
-.\scripts\vscode-cleanup-master.ps1 -Preview -All
+.\run.ps1 -Operation Preview
 
 # 仅清理数据库
-.\scripts\vscode-cleanup-master.ps1 -Clean
+.\run.ps1 -Operation Clean
 
 # 仅修改遥测ID
-.\scripts\vscode-cleanup-master.ps1 -ModifyTelemetry
+.\run.ps1 -Operation ModifyTelemetry
+
+# 直接使用Windows脚本（高级用法）
+.\scripts\windows\vscode-cleanup-master.ps1 -All
 
 # 跳过备份创建
-.\scripts\vscode-cleanup-master.ps1 -All -NoBackup
-
-# 包含便携版安装
-.\scripts\vscode-cleanup-master.ps1 -All -IncludePortable
+.\scripts\windows\vscode-cleanup-master.ps1 -All -NoBackup
 
 # 启用详细日志
-.\scripts\vscode-cleanup-master.ps1 -All -Verbose
+.\scripts\windows\vscode-cleanup-master.ps1 -All -Verbose
 
 # 显示将要执行的操作而不实际执行
-.\scripts\vscode-cleanup-master.ps1 -All -WhatIf
+.\scripts\windows\vscode-cleanup-master.ps1 -All -WhatIf
 ```
 
 ### 安装脚本选项
 ```powershell
-# 使用新的主脚本 (推荐)
-.\scripts\install.ps1 --master --all
+# 使用快速启动脚本（推荐）
+.\run.ps1 -Operation All
 
 # 预览操作
-.\scripts\install.ps1 --master --preview
+.\run.ps1 -Operation Preview
 
-# 传统的独立脚本
-.\scripts\install.ps1 --clean
-.\scripts\install.ps1 --modify-ids
-.\scripts\install.ps1 --all
+# 使用跨平台启动器
+.\scripts\augment-vip-launcher.ps1 -Operation All
+
+# 远程安装和执行
+irm https://raw.githubusercontent.com/IIXINGCHEN/augment-vip/main/install.ps1 | iex
 ```
 
 ## 命令行选项
@@ -245,10 +280,12 @@ winget install sqlite
 Set-ExecutionPolicy RemoteSigned -Scope CurrentUser
 
 # 临时方案：绕过执行策略运行单个脚本
-PowerShell -ExecutionPolicy Bypass -File .\scripts\install.ps1 --master --all
+PowerShell -ExecutionPolicy Bypass -File .\run.ps1 -Operation All
 
 # 解除文件阻止（如果文件来自网络下载）
+Unblock-File .\*.ps1
 Unblock-File .\scripts\*.ps1
+Unblock-File .\scripts\windows\*.ps1
 
 # 验证当前执行策略设置
 Get-ExecutionPolicy -List
@@ -268,10 +305,13 @@ Get-ExecutionPolicy -List
 ### 调试模式
 ```powershell
 # 启用详细日志进行故障排除
-.\scripts\vscode-cleanup-master.ps1 -All -Verbose
+.\run.ps1 -Operation All -VerboseOutput
+
+# 或直接使用Windows脚本
+.\scripts\windows\vscode-cleanup-master.ps1 -All -Verbose
 
 # 检查系统信息 (需要先导入模块)
-Import-Module .\scripts\modules\SystemDetection.psm1 -Force
+Import-Module .\scripts\windows\modules\SystemDetection.psm1 -Force
 Show-SystemInformation
 
 # 测试系统兼容性
@@ -302,15 +342,18 @@ Test-SystemCompatibility
 ### 测试
 ```powershell
 # 测试单个模块
-Import-Module .\scripts\modules\Logger.psm1 -Force
+Import-Module .\scripts\windows\modules\Logger.psm1 -Force
 Test-ModuleFunctionality
 
 # 测试系统兼容性
-Import-Module .\scripts\modules\SystemDetection.psm1 -Force
+Import-Module .\scripts\windows\modules\SystemDetection.psm1 -Force
 Test-SystemCompatibility -Verbose
 
 # 预览操作
-.\scripts\vscode-cleanup-master.ps1 -Preview -All
+.\run.ps1 -Operation Preview
+
+# 或直接使用Windows脚本
+.\scripts\windows\vscode-cleanup-master.ps1 -Preview -All
 ```
 
 ## 许可证
