@@ -1,4 +1,4 @@
-# VS Code 清理大师脚本
+#  AUGMENT - VIP VS Code 清理脚本
 
 一个专为Windows系统优化的综合性PowerShell解决方案，用于清理VS Code数据和修改遥测标识符，具备完整的备份恢复功能。
 
