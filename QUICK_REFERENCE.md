@@ -43,11 +43,21 @@
 
 ### 安装和设置
 ```powershell
-# 设置执行策略
+# ⚠️ 首要步骤：设置PowerShell执行策略
+# 检查当前策略
+Get-ExecutionPolicy -List
+
+# 设置执行策略（推荐）
 Set-ExecutionPolicy RemoteSigned -Scope CurrentUser
 
+# 验证设置
+Get-ExecutionPolicy -Scope CurrentUser
+
 # 运行安装脚本
-.\.\scripts\install.ps1 --master --all
+.\scripts\install.ps1 --master --all
+
+# 如果仍有执行策略问题，使用绕过模式
+PowerShell -ExecutionPolicy Bypass -File .\scripts\install.ps1 --master --all
 
 # 检查系统兼容性
 Import-Module .\scripts\modules\SystemDetection.psm1 -Force
@@ -113,7 +123,9 @@ $standardVSCode = Get-VSCodeInstallation -Type Standard
 ### 常见错误
 | 错误 | 原因 | 解决方案 |
 |------|------|----------|
-| `模块导入失败` | 执行策略限制 | `Set-ExecutionPolicy RemoteSigned -Scope CurrentUser` |
+| `执行策略阻止脚本` | Windows默认安全策略 | `Set-ExecutionPolicy RemoteSigned -Scope CurrentUser` |
+| `未对文件进行数字签名` | 执行策略限制 | `PowerShell -ExecutionPolicy Bypass -File script.ps1` |
+| `模块导入失败` | 执行策略或文件阻止 | 设置执行策略 + `Unblock-File .\scripts\modules\*.psm1` |
 | `SQLite3 未找到` | 缺少依赖 | `choco install sqlite` |
 | `权限不足` | 需要管理员权限 | 以管理员身份运行PowerShell |
 | `VS Code 未找到` | 路径问题 | 检查VS Code安装路径 |

@@ -16,11 +16,10 @@
 
 ## 核心功能
 
-- **数据库清理**: 移除VS Code SQLite数据库中的所有Augment相关条目
+- **数据库清理**: 移除VS Code SQLite数据库中的所有相关条目
 - **遥测修改**: 生成新的安全随机遥测ID (machineId, deviceId, sqmId)
 - **自动备份**: 在任何修改前创建备份，具备完整性验证
 - **多安装支持**: 检测并处理标准版、Insiders版和便携版VS Code安装
-- **Context7框架兼容**: 专门设计用于Context7框架
 - **回滚功能**: 需要时可从备份恢复
 - **系统兼容**: Windows 10+ 配合 PowerShell 5.1+
 
@@ -36,12 +35,42 @@
 - 管理员权限以获得完整功能
 - PowerShell执行策略设置为RemoteSigned或Unrestricted
 
+### ⚠️ 重要：PowerShell执行策略设置
+Windows系统默认阻止运行未签名的PowerShell脚本。在运行本项目脚本前，您需要设置执行策略：
+
+```powershell
+# 推荐方案：为当前用户设置执行策略（安全）
+Set-ExecutionPolicy RemoteSigned -Scope CurrentUser
+
+# 验证设置
+Get-ExecutionPolicy -List
+```
+
+**如果仍然遇到执行策略错误，可以使用以下临时解决方案：**
+```powershell
+# 方案1：临时绕过执行策略
+PowerShell -ExecutionPolicy Bypass -File .\scripts\install.ps1 --master --all
+
+# 方案2：解除文件阻止
+Unblock-File .\scripts\install.ps1
+Unblock-File .\scripts\vscode-cleanup-master.ps1
+```
+
 ## 安装指南
 
 ### 快速安装
 ```powershell
-# 下载并运行安装脚本
+# 1. 设置PowerShell执行策略（首次运行必需）
+Set-ExecutionPolicy RemoteSigned -Scope CurrentUser
+
+# 2. 下载并运行安装脚本
 .\scripts\install.ps1 --master --all
+```
+
+**如果遇到执行策略错误：**
+```powershell
+# 使用绕过模式运行
+PowerShell -ExecutionPolicy Bypass -File .\scripts\install.ps1 --master --all
 ```
 
 ### 手动安装
@@ -212,9 +241,24 @@ winget install sqlite
 
 **"执行策略阻止脚本执行"**
 ```powershell
-# 为当前用户设置执行策略
+# 推荐方案：为当前用户设置执行策略（永久）
 Set-ExecutionPolicy RemoteSigned -Scope CurrentUser
+
+# 临时方案：绕过执行策略运行单个脚本
+PowerShell -ExecutionPolicy Bypass -File .\scripts\install.ps1 --master --all
+
+# 解除文件阻止（如果文件来自网络下载）
+Unblock-File .\scripts\*.ps1
+
+# 验证当前执行策略设置
+Get-ExecutionPolicy -List
 ```
+
+**执行策略说明：**
+- `Restricted`（默认）：不允许运行任何脚本
+- `RemoteSigned`（推荐）：允许本地脚本，远程脚本需要签名
+- `Unrestricted`：允许所有脚本（不推荐）
+- `Bypass`：临时绕过所有限制
 
 **"访问被拒绝"错误**
 - 以管理员身份运行PowerShell
@@ -281,8 +325,13 @@ Test-SystemCompatibility -Verbose
 
 - **[完整用户指南](USER_GUIDE.md)** - 详细的使用说明和API参考
 - **[快速参考](QUICK_REFERENCE.md)** - 命令速查和常用操作
+- **[故障排除指南](TROUBLESHOOTING.md)** - 常见问题解决方案，包括执行策略问题
 - **[致谢文档](CREDITS.md)** - 原作者致谢和项目贡献
 
 ---
 
-**⚠️ 重要提示**: 在运行清理操作之前，请务必确保VS Code完全关闭。虽然会自动创建备份，但建议在运行脚本之前手动备份重要的工作区设置。
+**⚠️ 重要提示**:
+1. **首次使用必读**：Windows系统默认阻止PowerShell脚本运行，请先设置执行策略：`Set-ExecutionPolicy RemoteSigned -Scope CurrentUser`
+2. **运行前准备**：确保VS Code完全关闭后再运行清理操作
+3. **安全备份**：虽然会自动创建备份，但建议手动备份重要的工作区设置
+4. **遇到问题**：请参考 [故障排除指南](TROUBLESHOOTING.md) 获取详细解决方案

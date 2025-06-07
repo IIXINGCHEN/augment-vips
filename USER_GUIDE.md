@@ -55,6 +55,27 @@ VS Code Cleanup Master 是一个专业的PowerShell工具套件，专门用于�
 - **curl**：用于网络操作（可选）
 - **jq**：用于JSON处理（可选）
 
+### ⚠️ 关键：PowerShell执行策略配置
+Windows系统默认的PowerShell执行策略会阻止运行未签名脚本，这是最常见的运行问题。
+
+**执行策略类型说明：**
+- `Restricted`（Windows默认）：完全禁止脚本执行
+- `RemoteSigned`（推荐设置）：允许本地脚本，远程脚本需要数字签名
+- `Unrestricted`：允许所有脚本（安全风险较高）
+- `Bypass`：临时绕过所有策略限制
+
+**推荐配置方法：**
+```powershell
+# 查看当前执行策略
+Get-ExecutionPolicy -List
+
+# 为当前用户设置执行策略（推荐）
+Set-ExecutionPolicy RemoteSigned -Scope CurrentUser
+
+# 验证设置是否生效
+Get-ExecutionPolicy -Scope CurrentUser
+```
+
 ## 🚀 安装指南
 
 ### 方法一：自动安装（推荐）
@@ -66,16 +87,36 @@ VS Code Cleanup Master 是一个专业的PowerShell工具套件，专门用于�
    # 解压项目文件到 augment-vip 目录
    ```
 
-2. **运行安装脚本**
+2. **配置PowerShell执行策略**
    ```powershell
-   # 以管理员身份打开PowerShell
-   cd "C:\Tools\augment-vip\scripts"
-   
-   # 设置执行策略（如果需要）
+   # 以管理员身份打开PowerShell（推荐）
+   # 或以普通用户身份打开PowerShell
+
+   # 检查当前执行策略
+   Get-ExecutionPolicy -List
+
+   # 设置执行策略（选择以下方案之一）
+
+   # 方案A：为当前用户设置（推荐，安全）
    Set-ExecutionPolicy RemoteSigned -Scope CurrentUser
-   
+
+   # 方案B：为本机所有用户设置（需要管理员权限）
+   Set-ExecutionPolicy RemoteSigned -Scope LocalMachine
+
+   # 验证设置
+   Get-ExecutionPolicy -Scope CurrentUser
+   ```
+
+3. **运行安装脚本**
+   ```powershell
+   # 导航到项目目录
+   cd "C:\Tools\augment-vip"
+
    # 运行安装脚本
    .\scripts\install.ps1 --master --all
+
+   # 如果仍然遇到执行策略问题，使用绕过模式
+   PowerShell -ExecutionPolicy Bypass -File .\scripts\install.ps1 --master --all
    ```
 
 3. **验证安装**
@@ -340,7 +381,41 @@ Register-ScheduledTask -Action $action -Trigger $trigger -TaskName "VSCode Clean
 
 ### 常见错误及解决方案
 
-#### 1. 模块导入失败
+#### 1. PowerShell执行策略阻止脚本运行
+**错误信息**：
+- `无法加载文件 xxx.ps1。未对文件进行数字签名`
+- `UnauthorizedAccess`
+- `Execution of scripts is disabled on this system`
+
+**详细解决方案**：
+```powershell
+# 步骤1：检查当前执行策略
+Get-ExecutionPolicy -List
+
+# 步骤2：选择合适的解决方案
+
+# 解决方案A：永久设置（推荐）
+Set-ExecutionPolicy RemoteSigned -Scope CurrentUser
+# 或者为所有用户设置（需要管理员权限）
+Set-ExecutionPolicy RemoteSigned -Scope LocalMachine
+
+# 解决方案B：临时绕过（单次使用）
+PowerShell -ExecutionPolicy Bypass -File .\scripts\install.ps1 --master --all
+
+# 解决方案C：解除文件阻止（如果文件来自网络）
+Unblock-File .\scripts\*.ps1
+Get-ChildItem .\scripts\modules\*.psm1 | Unblock-File
+
+# 步骤3：验证设置
+Get-ExecutionPolicy -Scope CurrentUser
+```
+
+**安全注意事项**：
+- `RemoteSigned` 是推荐的安全设置
+- 避免使用 `Unrestricted` 除非绝对必要
+- `Bypass` 仅用于临时解决问题
+
+#### 2. 模块导入失败
 **错误信息**：`Failed to import module Logger.psm1`
 
 **解决方案**：
@@ -348,11 +423,11 @@ Register-ScheduledTask -Action $action -Trigger $trigger -TaskName "VSCode Clean
 # 检查文件是否存在
 Test-Path .\scripts\modules\Logger.psm1
 
-# 检查执行策略
+# 检查执行策略（参考上面的解决方案）
 Get-ExecutionPolicy
 
-# 设置执行策略
-Set-ExecutionPolicy RemoteSigned -Scope CurrentUser
+# 解除模块文件阻止
+Unblock-File .\scripts\modules\*.psm1
 
 # 手动导入测试
 Import-Module .\scripts\modules\Logger.psm1 -Force -Verbose
