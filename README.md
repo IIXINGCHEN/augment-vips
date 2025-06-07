@@ -1,6 +1,6 @@
-#  AUGMENT - VIP VS Code 清理脚本
+#  VS Code Cleanup Master - 专业的VS Code清理工具
 
-一个专为Windows系统优化的综合性PowerShell解决方案，用于清理VS Code数据和修改遥测标识符，具备完整的备份恢复功能。
+一个专为Windows/Linux系统开发的VS Code清理工具，用于清理VS Code数据和修改遥测标识符，具备完整的备份恢复功能。该工具支持多种VS Code安装类型，并提供企业级的安全性和可靠性。
 
 ## 🙏 致谢
 
