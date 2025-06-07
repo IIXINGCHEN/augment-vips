@@ -1,12 +1,12 @@
-# VS Code Cleanup Master Script
+# VS Code 清理大师脚本
 
-A comprehensive PowerShell solution for cleaning VS Code data and modifying telemetry identifiers with full backup and recovery capabilities.
+一个专为Windows系统优化的综合性PowerShell解决方案，用于清理VS Code数据和修改遥测标识符，具备完整的备份恢复功能。
 
-## 🙏 致谢 / Acknowledgments
+## 🙏 致谢
 
 本项目基于 [azrilaiman2003/augment-vip](https://github.com/azrilaiman2003/augment-vip) 进行二次开发和优化。
 
-**感谢原作者的贡献！** 我们在原项目基础上进行了以下重大改进：
+**感谢原作者 azrilaiman2003 的贡献！** 我们在原项目基础上专门为Windows系统进行了以下重大改进：
 - ✅ **Windows系统完整支持** - 专门为Windows 10+系统优化
 - ✅ **PowerShell模块化架构** - 企业级代码结构
 - ✅ **完整的备份恢复系统** - 安全可靠的操作保障
@@ -14,278 +14,273 @@ A comprehensive PowerShell solution for cleaning VS Code data and modifying tele
 - ✅ **企业级安全特性** - SQL注入防护、加密安全随机数生成
 - ✅ **完整的文档系统** - 详细的使用指南和API文档
 
-This project is based on [azrilaiman2003/augment-vip](https://github.com/azrilaiman2003/augment-vip) with significant enhancements and optimizations.
+## 核心功能
 
-**Thanks to the original author!** We have made the following major improvements:
-- ✅ **Complete Windows Support** - Optimized for Windows 10+ systems
-- ✅ **PowerShell Modular Architecture** - Enterprise-grade code structure
-- ✅ **Full Backup & Recovery System** - Safe and reliable operation guarantee
-- ✅ **Multi VS Code Version Support** - Standard, Insiders, and Portable editions
-- ✅ **Enterprise Security Features** - SQL injection protection, cryptographically secure random generation
-- ✅ **Complete Documentation System** - Detailed user guides and API documentation
+- **数据库清理**: 移除VS Code SQLite数据库中的所有Augment相关条目
+- **遥测修改**: 生成新的安全随机遥测ID (machineId, deviceId, sqmId)
+- **自动备份**: 在任何修改前创建备份，具备完整性验证
+- **多安装支持**: 检测并处理标准版、Insiders版和便携版VS Code安装
+- **Context7框架兼容**: 专门设计用于Context7框架
+- **回滚功能**: 需要时可从备份恢复
+- **系统兼容**: Windows 10+ 配合 PowerShell 5.1+
 
-## Features
+## 系统要求
 
-- **Database Cleaning**: Remove all Augment-related entries from VS Code SQLite databases
-- **Telemetry Modification**: Generate new secure random telemetry IDs (machineId, deviceId, sqmId)
-- **Automatic Backup**: Create backups before any modifications with integrity verification
-- **Multi-Installation Support**: Detect and process standard, Insiders, and portable VS Code installations
-- **Context7 Framework Compatible**: Specifically designed to work with Context7 framework
-- **Rollback Capability**: Restore from backups if needed
-- **System Compatibility**: Windows 10+ with PowerShell 5.1+
+### 最低要求
+- **操作系统**: Windows 10 或更高版本
+- **PowerShell**: 版本 5.1 或更高
+- **依赖项**: SQLite3, curl, jq (自动检查)
+- **磁盘空间**: 至少1GB可用空间用于备份操作
 
-## System Requirements
+### 推荐配置
+- 管理员权限以获得完整功能
+- PowerShell执行策略设置为RemoteSigned或Unrestricted
 
-### Minimum Requirements
-- **Operating System**: Windows 10 or higher
-- **PowerShell**: Version 5.1 or higher
-- **Dependencies**: SQLite3, curl, jq (automatically checked)
-- **Disk Space**: At least 1GB free space for backup operations
+## 安装指南
 
-### Recommended
-- Administrator privileges for full functionality
-- PowerShell execution policy set to RemoteSigned or Unrestricted
-
-## Installation
-
-### Quick Install
+### 快速安装
 ```powershell
-# Download and run the installation script
+# 下载并运行安装脚本
 .\install.ps1 --master --all
 ```
 
-### Manual Installation
-1. Clone or download the repository
-2. Navigate to the scripts directory
-3. Run the installation script with desired options
+### 手动安装
+1. 克隆或下载仓库
+2. 导航到scripts目录
+3. 使用所需选项运行安装脚本
 
-## Usage
+## 使用方法
 
-### Master Script (Recommended)
+### 主脚本 (推荐)
 ```powershell
-# Clean databases and modify telemetry IDs
+# 清理数据库并修改遥测ID
 .\vscode-cleanup-master.ps1 -All
 
-# Preview operations without executing
+# 预览操作而不执行
 .\vscode-cleanup-master.ps1 -Preview -All
 
-# Clean databases only
+# 仅清理数据库
 .\vscode-cleanup-master.ps1 -Clean
 
-# Modify telemetry IDs only
+# 仅修改遥测ID
 .\vscode-cleanup-master.ps1 -ModifyTelemetry
 
-# Skip backup creation
+# 跳过备份创建
 .\vscode-cleanup-master.ps1 -All -NoBackup
 
-# Include portable installations
+# 包含便携版安装
 .\vscode-cleanup-master.ps1 -All -IncludePortable
 
-# Enable verbose logging
+# 启用详细日志
 .\vscode-cleanup-master.ps1 -All -Verbose
 
-# Show what would be done without executing
+# 显示将要执行的操作而不实际执行
 .\vscode-cleanup-master.ps1 -All -WhatIf
 ```
 
-### Installation Script Options
+### 安装脚本选项
 ```powershell
-# Use new master script (recommended)
+# 使用新的主脚本 (推荐)
 .\install.ps1 --master --all
 
-# Preview operations
+# 预览操作
 .\install.ps1 --master --preview
 
-# Traditional individual scripts
+# 传统的独立脚本
 .\install.ps1 --clean
 .\install.ps1 --modify-ids
 .\install.ps1 --all
 ```
 
-## Command Line Options
+## 命令行选项
 
-### Master Script Parameters
-| Parameter | Description |
-|-----------|-------------|
-| `-Clean` | Clean Augment-related database entries |
-| `-ModifyTelemetry` | Modify VS Code telemetry IDs |
-| `-All` | Perform all operations |
-| `-Preview` | Show preview without making changes |
-| `-Backup` | Create backups (default: true) |
-| `-NoBackup` | Skip backup creation |
-| `-IncludePortable` | Include portable VS Code installations |
-| `-LogFile <path>` | Specify custom log file path |
-| `-Verbose` | Enable verbose logging |
-| `-WhatIf` | Show what would be done without executing |
-| `-Help` | Show help information |
+### 主脚本参数
+| 参数 | 说明 |
+|------|------|
+| `-Clean` | 清理Augment相关的数据库条目 |
+| `-ModifyTelemetry` | 修改VS Code遥测ID |
+| `-All` | 执行所有操作 |
+| `-Preview` | 显示预览而不进行更改 |
+| `-Backup` | 创建备份 (默认: true) |
+| `-NoBackup` | 跳过备份创建 |
+| `-IncludePortable` | 包含便携版VS Code安装 |
+| `-LogFile <path>` | 指定自定义日志文件路径 |
+| `-Verbose` | 启用详细日志 |
+| `-WhatIf` | 显示将要执行的操作而不实际执行 |
+| `-Help` | 显示帮助信息 |
 
-## What Gets Cleaned
+## 清理内容
 
-### Database Entries
-- All entries containing "augment", "Augment", or "AUGMENT"
-- Context7 framework related entries
-- Extension-related entries for Augment VIP
-- Telemetry and session data (optional)
+### 数据库条目
+- 所有包含"augment"、"Augment"或"AUGMENT"的条目
+- Augment VIP的扩展相关条目
+- 遥测和会话数据 (可选)
 
-### Telemetry IDs Modified
-- `telemetry.machineId` - 64-character hex string
+### 修改的遥测ID
+- `telemetry.machineId` - 64字符十六进制字符串
 - `telemetry.devDeviceId` - UUID v4
 - `telemetry.sqmId` - UUID v4
 - `telemetry.sessionId` - UUID v4
 - `telemetry.instanceId` - UUID v4
-- Timestamp fields updated to current time
+- 时间戳字段更新为当前时间
 
-## Backup and Recovery
+## 备份和恢复
 
-### Automatic Backups
-- Created before any modification
-- Timestamped filenames for easy identification
-- SHA256 hash verification for integrity
-- Metadata files for tracking original locations
+### 自动备份
+- 在任何修改前创建
+- 带时间戳的文件名便于识别
+- SHA256哈希验证完整性
+- 元数据文件跟踪原始位置
 
-### Backup Management
+### 备份管理
 ```powershell
-# View backup statistics
+# 查看备份统计
 Show-BackupStatistics
 
-# Clean old backups (keeps 10 most recent, max 30 days)
+# 清理旧备份 (保留最近10个，最多30天)
 Clear-OldBackups
 
-# Manual backup creation
-New-FileBackup -FilePath "path\to\file" -Description "Manual backup"
+# 手动创建备份
+New-FileBackup -FilePath "path\to\file" -Description "手动备份"
 ```
 
-### Recovery
+### 恢复
 ```powershell
-# Restore from backup
+# 从备份恢复
 $backups = Get-BackupFiles
 $latestBackup = $backups | Sort-Object CreatedDate -Descending | Select-Object -First 1
 Restore-FileBackup -BackupInfo $latestBackup -Force
 ```
 
-## Supported VS Code Installations
+## 支持的VS Code安装
 
-### Standard Locations
-- User installation: `%LOCALAPPDATA%\Programs\Microsoft VS Code`
-- System installation: `%ProgramFiles%\Microsoft VS Code`
-- Insiders: `%LOCALAPPDATA%\Programs\Microsoft VS Code Insiders`
+### 标准位置
+- 用户安装: `%LOCALAPPDATA%\Programs\Microsoft VS Code`
+- 系统安装: `%ProgramFiles%\Microsoft VS Code`
+- Insiders版: `%LOCALAPPDATA%\Programs\Microsoft VS Code Insiders`
 
-### Portable Installations
-- Current directory and subdirectories
-- Common portable app directories
-- Custom locations with `data` folder structure
+### 便携版安装
+- 当前目录和子目录
+- 常见的便携应用目录
+- 具有`data`文件夹结构的自定义位置
 
-### Data Locations
-- AppData: `%APPDATA%\Code` or `%APPDATA%\Code - Insiders`
-- Portable: `.\data\user-data` relative to installation
+### 数据位置
+- AppData: `%APPDATA%\Code` 或 `%APPDATA%\Code - Insiders`
+- 便携版: 相对于安装目录的 `.\data\user-data`
 
-## Security Features
+## 安全特性
 
-### Cryptographically Secure Random Generation
-- Uses `System.Security.Cryptography.RandomNumberGenerator`
-- Proper UUID v4 generation with correct version and variant bits
-- Secure hex string generation for machine IDs
+### 加密安全的随机生成
+- 使用 `System.Security.Cryptography.RandomNumberGenerator`
+- 正确的UUID v4生成，包含正确的版本和变体位
+- 机器ID的安全十六进制字符串生成
 
-### File Integrity
-- SHA256 hash verification for all backups
-- File size validation
-- Atomic operations where possible
+### 文件完整性
+- 所有备份的SHA256哈希验证
+- 文件大小验证
+- 尽可能使用原子操作
 
-## Logging
+## 日志记录
 
-### Log Levels
-- **Debug**: Detailed operation information
-- **Info**: General information messages
-- **Warning**: Non-critical issues
-- **Error**: Operation failures
-- **Critical**: System-level failures
+### 日志级别
+- **Debug**: 详细的操作信息
+- **Info**: 一般信息消息
+- **Warning**: 非关键问题
+- **Error**: 操作失败
+- **Critical**: 系统级失败
 
-### Log Locations
-- Default: `logs\vscode-cleanup-YYYYMMDD-HHMMSS.log`
-- Custom: Specify with `-LogFile` parameter
-- Console output with color coding
+### 日志位置
+- 默认: `logs\vscode-cleanup-YYYYMMDD-HHMMSS.log`
+- 自定义: 使用 `-LogFile` 参数指定
+- 带颜色编码的控制台输出
 
-## Troubleshooting
+## 故障排除
 
-### Common Issues
+### 常见问题
 
 **"SQLite3 command not found"**
 ```powershell
-# Install using Chocolatey
+# 使用Chocolatey安装
 choco install sqlite
 
-# Or using Scoop
+# 或使用Scoop
 scoop install sqlite
 
-# Or using winget
+# 或使用winget
 winget install sqlite
 ```
 
-**"Execution policy prevents script execution"**
+**"执行策略阻止脚本执行"**
 ```powershell
-# Set execution policy for current user
+# 为当前用户设置执行策略
 Set-ExecutionPolicy RemoteSigned -Scope CurrentUser
 ```
 
-**"Access denied" errors**
-- Run PowerShell as Administrator
-- Ensure VS Code is completely closed
-- Check file permissions
+**"访问被拒绝"错误**
+- 以管理员身份运行PowerShell
+- 确保VS Code完全关闭
+- 检查文件权限
 
-### Debug Mode
+### 调试模式
 ```powershell
-# Enable verbose logging for troubleshooting
+# 启用详细日志进行故障排除
 .\vscode-cleanup-master.ps1 -All -Verbose
 
-# Check system information
+# 检查系统信息
 Show-SystemInformation
 
-# Test system compatibility
+# 测试系统兼容性
 Test-SystemCompatibility
 ```
 
-## Module Architecture
+## 模块架构
 
-### Core Modules
-- **Logger.psm1**: Unified logging and progress reporting
-- **SystemDetection.psm1**: System compatibility and requirements checking
-- **VSCodeDiscovery.psm1**: VS Code installation detection
-- **BackupManager.psm1**: Backup creation, verification, and restoration
-- **DatabaseCleaner.psm1**: SQLite database cleaning operations
-- **TelemetryModifier.psm1**: Secure telemetry ID generation and modification
+### 核心模块
+- **Logger.psm1**: 统一日志记录和进度报告
+- **SystemDetection.psm1**: 系统兼容性和要求检查
+- **VSCodeDiscovery.psm1**: VS Code安装检测
+- **BackupManager.psm1**: 备份创建、验证和恢复
+- **DatabaseCleaner.psm1**: SQLite数据库清理操作
+- **TelemetryModifier.psm1**: 安全遥测ID生成和修改
 
-### Integration
-All modules are designed to work together seamlessly while maintaining independence for testing and maintenance.
+### 集成
+所有模块都设计为无缝协作，同时保持独立性以便测试和维护。
 
-## Contributing
+## 贡献
 
-### Development Setup
-1. Clone the repository
-2. Install required dependencies
-3. Run tests to verify functionality
-4. Follow PowerShell best practices
+### 开发设置
+1. 克隆仓库
+2. 安装所需依赖
+3. 运行测试验证功能
+4. 遵循PowerShell最佳实践
 
-### Testing
+### 测试
 ```powershell
-# Test individual modules
+# 测试单个模块
 Import-Module .\modules\Logger.psm1
 Test-ModuleFunctionality
 
-# Test system compatibility
+# 测试系统兼容性
 Test-SystemCompatibility -Verbose
 
-# Preview operations
+# 预览操作
 .\vscode-cleanup-master.ps1 -Preview -All
 ```
 
-## License
+## 许可证
 
-This project is part of the Augment VIP suite and follows the project's licensing terms.
+本项目是Augment VIP套件的一部分，遵循项目的许可证条款。
 
-## Support
+## 支持
 
-For issues, questions, or contributions, please refer to the project documentation or contact the development team.
+如有问题、疑问或贡献，请参考项目文档或联系开发团队。
+
+## 📚 文档
+
+- **[完整用户指南](USER_GUIDE.md)** - 详细的使用说明和API参考
+- **[快速参考](QUICK_REFERENCE.md)** - 命令速查和常用操作
+- **[致谢文档](CREDITS.md)** - 原作者致谢和项目贡献
 
 ---
 
-**⚠️ Important**: Always ensure VS Code is completely closed before running cleanup operations. While backups are created automatically, it's recommended to manually backup important workspace settings before running the script.
+**⚠️ 重要提示**: 在运行清理操作之前，请务必确保VS Code完全关闭。虽然会自动创建备份，但建议在运行脚本之前手动备份重要的工作区设置。
