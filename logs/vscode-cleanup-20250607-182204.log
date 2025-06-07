@@ -1,0 +1,2 @@
+﻿[2025-06-07 18:22:04] [INFO] Logger initialized - Log file: G:\SRC\augment-vip\logs\vscode-cleanup-20250607-182204.log
+[2025-06-07 18:22:04] [CRITICAL] Critical error during execution | Exception: 无法将“Initialize-BackupManager”项识别为 cmdlet、函数、脚本文件或可运行程序的名称。请检查名称的拼写，如果包括路径，请确保路径正确，然后再试一次。

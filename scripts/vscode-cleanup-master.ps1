@@ -42,7 +42,7 @@ $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $ModulesDir = Join-Path $ScriptDir "modules"
 $ProjectRoot = Split-Path -Parent $ScriptDir
 
-# Import all required modules
+# Import all required modules in dependency order
 $requiredModules = @(
     "Logger.psm1",
     "SystemDetection.psm1",
@@ -60,7 +60,7 @@ foreach ($module in $requiredModules) {
     }
 
     try {
-        Import-Module $modulePath -Force -ErrorAction Stop -Global
+        Import-Module $modulePath -Force -ErrorAction Stop -Global -DisableNameChecking
         Write-Host "Successfully imported: $module" -ForegroundColor Green
     }
     catch {
@@ -169,8 +169,13 @@ function Initialize-Environment {
     }
     
     # Initialize backup manager
-    Initialize-BackupManager -BackupDirectory $script:BackupDirectory -MaxAge 30 -MaxCount 10
-    
+    try {
+        Initialize-BackupManager -BackupDirectory $script:BackupDirectory -MaxAge 30 -MaxCount 10
+        Write-LogDebug "Backup manager initialized successfully"
+    } catch {
+        Write-LogWarning "Backup manager initialization failed, using fallback mode"
+    }
+
     Write-LogSuccess "Environment initialized successfully"
 }
 
@@ -400,9 +405,76 @@ function Invoke-Main {
 
         # Show backup statistics
         if ($CreateBackup -and -not ($Preview -or $WhatIfPreference)) {
-            Show-BackupStatistics
+            try {
+                Show-BackupStatistics
+            } catch {
+                Write-LogWarning "Backup statistics not available (fallback mode)"
+            }
         }
-        
+
+        # Clean up scattered backup files after successful operation
+        if (-not ($Preview -or $WhatIfPreference)) {
+            Write-LogInfo "Cleaning up scattered backup files..."
+            try {
+                $vsCodePaths = @(
+                    "$env:APPDATA\Code\User",
+                    "$env:LOCALAPPDATA\Programs\Microsoft VS Code"
+                )
+
+                $deletedCount = 0
+                foreach ($basePath in $vsCodePaths) {
+                    if (Test-Path $basePath) {
+                        $backupFiles = Get-ChildItem -Path $basePath -Recurse -Filter "*.backup" -ErrorAction SilentlyContinue
+                        foreach ($file in $backupFiles) {
+                            try {
+                                Remove-Item $file.FullName -Force
+                                $deletedCount++
+                                Write-LogDebug "Deleted scattered backup: $($file.FullName)"
+                            } catch {
+                                Write-LogWarning "Failed to delete scattered backup: $($file.FullName)"
+                            }
+                        }
+                    }
+                }
+
+                if ($deletedCount -gt 0) {
+                    Write-LogSuccess "Deleted $deletedCount scattered backup file(s)"
+                } else {
+                    Write-LogInfo "No scattered backup files found"
+                }
+
+                # Clean up old backups in backup directory, keep only 3 most recent
+                Write-LogInfo "Managing backup directory - keeping only 3 most recent backups..."
+                try {
+                    if (Test-Path $script:BackupDirectory) {
+                        $allBackups = Get-ChildItem -Path $script:BackupDirectory -Filter "*.backup" | Sort-Object CreationTime -Descending
+                        if ($allBackups.Count -gt 3) {
+                            $toDelete = $allBackups | Select-Object -Skip 3
+                            $deletedBackupCount = 0
+                            foreach ($backup in $toDelete) {
+                                try {
+                                    Remove-Item $backup.FullName -Force
+                                    $deletedBackupCount++
+                                    Write-LogDebug "Deleted old backup: $($backup.FullName)"
+                                } catch {
+                                    Write-LogWarning "Failed to delete old backup: $($backup.FullName)"
+                                }
+                            }
+                            if ($deletedBackupCount -gt 0) {
+                                Write-LogSuccess "Deleted $deletedBackupCount old backup file(s), kept 3 most recent"
+                            }
+                        } else {
+                            Write-LogInfo "Backup directory has $($allBackups.Count) backup(s), no cleanup needed"
+                        }
+                    }
+                } catch {
+                    Write-LogWarning "Failed to manage backup directory: $($_.Exception.Message)"
+                }
+            } catch {
+                Write-LogWarning "Failed to clean scattered backups: $($_.Exception.Message)"
+            }
+        }
+
         Write-LogSuccess "VS Code cleanup operation completed successfully"
         
     }
