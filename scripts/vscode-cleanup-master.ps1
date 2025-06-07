@@ -72,6 +72,7 @@ foreach ($module in $requiredModules) {
 # Global variables
 $script:BackupDirectory = Join-Path $ProjectRoot "data\backups"
 $script:LogDirectory = Join-Path $ProjectRoot "logs"
+$script:Config = $null
 
 # Fallback functions in case module import fails
 if (-not (Get-Command Write-LogInfo -ErrorAction SilentlyContinue)) {
@@ -96,6 +97,69 @@ if (-not (Get-Command Write-LogInfo -ErrorAction SilentlyContinue)) {
     function Show-TelemetryModificationPreview { param($StorageJsonPaths) Write-Host "[INFO] Telemetry modification preview (fallback mode)" -ForegroundColor Blue }
     function Show-BackupStatistics { Write-Host "[INFO] Backup statistics (fallback mode)" -ForegroundColor Blue }
     function Show-SystemInformation { Write-Host "[INFO] System information (fallback mode)" -ForegroundColor Blue }
+}
+
+<#
+.SYNOPSIS
+    Loads configuration from config.json file
+#>
+function Load-Configuration {
+    $configPath = Join-Path $ProjectRoot "config\config.json"
+
+    if (Test-Path $configPath) {
+        try {
+            $script:Config = Get-Content $configPath | ConvertFrom-Json
+            Write-LogDebug "Configuration loaded from: $configPath"
+
+            # Override global variables with config values
+            if ($script:Config.backup.directory) {
+                $script:BackupDirectory = Join-Path $ProjectRoot $script:Config.backup.directory
+            }
+            if ($script:Config.logging.directory) {
+                $script:LogDirectory = Join-Path $ProjectRoot $script:Config.logging.directory
+            }
+
+            Write-LogInfo "Using configuration file: $configPath"
+            return $true
+        }
+        catch {
+            Write-LogWarning "Failed to load configuration file: $($_.Exception.Message)"
+            Write-LogInfo "Using default configuration"
+            return $false
+        }
+    }
+    else {
+        Write-LogInfo "No configuration file found, using defaults"
+        return $false
+    }
+}
+
+<#
+.SYNOPSIS
+    Gets configuration value with fallback to default
+#>
+function Get-ConfigValue {
+    param(
+        [string]$Path,
+        [object]$Default
+    )
+
+    if (-not $script:Config) {
+        return $Default
+    }
+
+    $parts = $Path.Split('.')
+    $current = $script:Config
+
+    foreach ($part in $parts) {
+        if ($current -and $current.PSObject.Properties[$part]) {
+            $current = $current.$part
+        } else {
+            return $Default
+        }
+    }
+
+    return $current
 }
 
 <#
@@ -150,7 +214,10 @@ System Requirements:
 #>
 function Initialize-Environment {
     Write-LogInfo "Initializing VS Code Cleanup Master Script v1.0.0"
-    
+
+    # Load configuration first
+    Load-Configuration
+
     # Create necessary directories
     $directories = @($script:BackupDirectory, $script:LogDirectory)
     foreach ($dir in $directories) {
@@ -159,18 +226,23 @@ function Initialize-Environment {
             Write-LogDebug "Created directory: $dir"
         }
     }
-    
-    # Initialize logger
+
+    # Initialize logger with config values
+    $enableConsole = Get-ConfigValue "logging.enableConsole" $true
+    $enableFile = Get-ConfigValue "logging.enableFile" $true
+
     if ($LogFile) {
-        Initialize-Logger -LogFilePath $LogFile -EnableConsole $true -EnableFile $true
+        Initialize-Logger -LogFilePath $LogFile -EnableConsole $enableConsole -EnableFile $enableFile
     } else {
         $defaultLogFile = Join-Path $script:LogDirectory "vscode-cleanup-$(Get-Date -Format 'yyyyMMdd-HHmmss').log"
-        Initialize-Logger -LogFilePath $defaultLogFile -EnableConsole $true -EnableFile $true
+        Initialize-Logger -LogFilePath $defaultLogFile -EnableConsole $enableConsole -EnableFile $enableFile
     }
-    
-    # Initialize backup manager
+
+    # Initialize backup manager with config values
     try {
-        Initialize-BackupManager -BackupDirectory $script:BackupDirectory -MaxAge 30 -MaxCount 10
+        $retentionDays = Get-ConfigValue "backup.retentionDays" 30
+        $maxCount = Get-ConfigValue "backup.maxBackupCount" 3
+        Initialize-BackupManager -BackupDirectory $script:BackupDirectory -MaxAge $retentionDays -MaxCount $maxCount
         Write-LogDebug "Backup manager initialized successfully"
     } catch {
         Write-LogWarning "Backup manager initialization failed, using fallback mode"
@@ -414,42 +486,52 @@ function Invoke-Main {
 
         # Clean up scattered backup files after successful operation
         if (-not ($Preview -or $WhatIfPreference)) {
-            Write-LogInfo "Cleaning up scattered backup files..."
-            try {
-                $vsCodePaths = @(
-                    "$env:APPDATA\Code\User",
-                    "$env:LOCALAPPDATA\Programs\Microsoft VS Code"
-                )
+            $enableScatteredCleanup = Get-ConfigValue "features.scatteredBackupCleanup" $true
+            $enableAutoCleanup = Get-ConfigValue "features.autoCleanupBackups" $true
 
-                $deletedCount = 0
-                foreach ($basePath in $vsCodePaths) {
-                    if (Test-Path $basePath) {
-                        $backupFiles = Get-ChildItem -Path $basePath -Recurse -Filter "*.backup" -ErrorAction SilentlyContinue
-                        foreach ($file in $backupFiles) {
-                            try {
-                                Remove-Item $file.FullName -Force
-                                $deletedCount++
-                                Write-LogDebug "Deleted scattered backup: $($file.FullName)"
-                            } catch {
-                                Write-LogWarning "Failed to delete scattered backup: $($file.FullName)"
+            if ($enableScatteredCleanup) {
+                Write-LogInfo "Cleaning up scattered backup files..."
+                try {
+                    $vsCodePaths = @(
+                        "$env:APPDATA\Code\User",
+                        "$env:LOCALAPPDATA\Programs\Microsoft VS Code"
+                    )
+
+                    $deletedCount = 0
+                    foreach ($basePath in $vsCodePaths) {
+                        if (Test-Path $basePath) {
+                            $backupFiles = Get-ChildItem -Path $basePath -Recurse -Filter "*.backup" -ErrorAction SilentlyContinue
+                            foreach ($file in $backupFiles) {
+                                try {
+                                    Remove-Item $file.FullName -Force
+                                    $deletedCount++
+                                    Write-LogDebug "Deleted scattered backup: $($file.FullName)"
+                                } catch {
+                                    Write-LogWarning "Failed to delete scattered backup: $($file.FullName)"
+                                }
                             }
                         }
                     }
-                }
 
-                if ($deletedCount -gt 0) {
-                    Write-LogSuccess "Deleted $deletedCount scattered backup file(s)"
-                } else {
-                    Write-LogInfo "No scattered backup files found"
+                    if ($deletedCount -gt 0) {
+                        Write-LogSuccess "Deleted $deletedCount scattered backup file(s)"
+                    } else {
+                        Write-LogInfo "No scattered backup files found"
+                    }
+                } catch {
+                    Write-LogWarning "Failed to clean scattered backups: $($_.Exception.Message)"
                 }
+            }
 
-                # Clean up old backups in backup directory, keep only 3 most recent
-                Write-LogInfo "Managing backup directory - keeping only 3 most recent backups..."
+            if ($enableAutoCleanup) {
+                # Clean up old backups in backup directory, keep only configured number
+                $maxBackups = Get-ConfigValue "backup.maxBackupCount" 3
+                Write-LogInfo "Managing backup directory - keeping only $maxBackups most recent backups..."
                 try {
                     if (Test-Path $script:BackupDirectory) {
                         $allBackups = Get-ChildItem -Path $script:BackupDirectory -Filter "*.backup" | Sort-Object CreationTime -Descending
-                        if ($allBackups.Count -gt 3) {
-                            $toDelete = $allBackups | Select-Object -Skip 3
+                        if ($allBackups.Count -gt $maxBackups) {
+                            $toDelete = $allBackups | Select-Object -Skip $maxBackups
                             $deletedBackupCount = 0
                             foreach ($backup in $toDelete) {
                                 try {
@@ -461,7 +543,7 @@ function Invoke-Main {
                                 }
                             }
                             if ($deletedBackupCount -gt 0) {
-                                Write-LogSuccess "Deleted $deletedBackupCount old backup file(s), kept 3 most recent"
+                                Write-LogSuccess "Deleted $deletedBackupCount old backup file(s), kept $maxBackups most recent"
                             }
                         } else {
                             Write-LogInfo "Backup directory has $($allBackups.Count) backup(s), no cleanup needed"
@@ -470,8 +552,6 @@ function Invoke-Main {
                 } catch {
                     Write-LogWarning "Failed to manage backup directory: $($_.Exception.Message)"
                 }
-            } catch {
-                Write-LogWarning "Failed to clean scattered backups: $($_.Exception.Message)"
             }
         }
 

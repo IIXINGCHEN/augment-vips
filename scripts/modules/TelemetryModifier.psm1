@@ -9,7 +9,6 @@
 # Import required modules
 Import-Module (Join-Path $PSScriptRoot "Logger.psm1") -Force
 Import-Module (Join-Path $PSScriptRoot "BackupManager.psm1") -Force
-Import-Module (Join-Path $PSScriptRoot "CentralizedBackupHandler.psm1") -Force
 
 # Telemetry modification result class
 class TelemetryModificationResult {

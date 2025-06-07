@@ -1,7 +1,51 @@
 {
-    "environment":  "development",
-    "version":  "1.0.0",
-    "features":  {
-                     "cleanCodeDb":  true
-                 }
+    "version": "1.0.0",
+    "environment": "production",
+    "backup": {
+        "enabled": true,
+        "retentionDays": 30,
+        "maxBackupCount": 3,
+        "directory": "./data/backups"
+    },
+    "logging": {
+        "level": "Info",
+        "enableConsole": true,
+        "enableFile": true,
+        "directory": "./logs"
+    },
+    "cleaning": {
+        "augmentPatterns": [
+            "%augment%",
+            "%Augment%",
+            "%AUGMENT%",
+            "%context7%",
+            "%Context7%",
+            "%CONTEXT7%"
+        ],
+        "customPatterns": [],
+        "enableDatabaseCleaning": true,
+        "enableTelemetryModification": true
+    },
+    "telemetry": {
+        "modifyIds": true,
+        "idTypes": [
+            "telemetry.machineId",
+            "telemetry.devDeviceId",
+            "telemetry.sqmId",
+            "telemetry.sessionId",
+            "telemetry.lastSessionDate",
+            "telemetry.firstSessionDate",
+            "telemetry.instanceId"
+        ]
+    },
+    "discovery": {
+        "includePortable": true,
+        "searchPaths": [],
+        "enableProductionMethod": true
+    },
+    "features": {
+        "autoCleanupBackups": true,
+        "scatteredBackupCleanup": true,
+        "backupIntegrityCheck": true
+    }
 }
