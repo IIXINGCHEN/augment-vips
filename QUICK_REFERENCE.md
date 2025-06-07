@@ -1,4 +1,4 @@
-# VS Code Cleanup Master - 快速参考
+﻿# VS Code Cleanup Master - 快速参考
 
 ## 🙏 致谢
 
@@ -47,17 +47,17 @@
 Set-ExecutionPolicy RemoteSigned -Scope CurrentUser
 
 # 运行安装脚本
-.\install.ps1 --master --all
+.\.\scripts\install.ps1 --master --all
 
 # 检查系统兼容性
-Import-Module .\modules\SystemDetection.psm1 -Force
+Import-Module .\scripts\modules\SystemDetection.psm1 -Force
 Test-SystemCompatibility
 ```
 
 ### 备份管理
 ```powershell
 # 导入备份模块
-Import-Module .\modules\BackupManager.psm1 -Force
+Import-Module .\scripts\modules\BackupManager.psm1 -Force
 
 # 初始化备份管理器
 Initialize-BackupManager -BackupDirectory ".\data\backups" -MaxAge 30 -MaxCount 10
@@ -79,7 +79,7 @@ Clear-OldBackups -Force
 ### 日志管理
 ```powershell
 # 导入日志模块
-Import-Module .\modules\Logger.psm1 -Force
+Import-Module .\scripts\modules\Logger.psm1 -Force
 
 # 初始化日志
 Initialize-Logger -LogFilePath "custom.log" -Level Info -EnableConsole $true -EnableFile $true
@@ -94,7 +94,7 @@ Write-LogSuccess "成功消息"
 ### VS Code 发现
 ```powershell
 # 导入发现模块
-Import-Module .\modules\VSCodeDiscovery.psm1 -Force
+Import-Module .\scripts\modules\VSCodeDiscovery.psm1 -Force
 
 # 发现所有安装
 $installations = Find-VSCodeInstallations -IncludePortable
@@ -125,14 +125,14 @@ $standardVSCode = Get-VSCodeInstallation -Type Standard
 .\health-check.ps1 -Detailed
 
 # 检查系统信息
-Import-Module .\modules\SystemDetection.psm1 -Force
+Import-Module .\scripts\modules\SystemDetection.psm1 -Force
 Show-SystemInformation
 
 # 测试模块导入
 $modules = @("Logger", "SystemDetection", "VSCodeDiscovery", "BackupManager", "DatabaseCleaner", "TelemetryModifier")
 foreach ($module in $modules) {
     try {
-        Import-Module ".\modules\$module.psm1" -Force
+        Import-Module ".\scripts\modules\$module.psm1" -Force
         Write-Host "$module`: OK" -ForegroundColor Green
     } catch {
         Write-Host "$module`: ERROR" -ForegroundColor Red

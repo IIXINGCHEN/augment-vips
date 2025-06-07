@@ -41,12 +41,12 @@
 ### 快速安装
 ```powershell
 # 下载并运行安装脚本
-.\install.ps1 --master --all
+.\scripts\install.ps1 --master --all
 ```
 
 ### 手动安装
 1. 克隆或下载仓库
-2. 导航到scripts目录
+2. 导航到项目根目录
 3. 使用所需选项运行安装脚本
 
 ## 使用方法
@@ -54,42 +54,42 @@
 ### 主脚本 (推荐)
 ```powershell
 # 清理数据库并修改遥测ID
-.\vscode-cleanup-master.ps1 -All
+.\scripts\vscode-cleanup-master.ps1 -All
 
 # 预览操作而不执行
-.\vscode-cleanup-master.ps1 -Preview -All
+.\scripts\vscode-cleanup-master.ps1 -Preview -All
 
 # 仅清理数据库
-.\vscode-cleanup-master.ps1 -Clean
+.\scripts\vscode-cleanup-master.ps1 -Clean
 
 # 仅修改遥测ID
-.\vscode-cleanup-master.ps1 -ModifyTelemetry
+.\scripts\vscode-cleanup-master.ps1 -ModifyTelemetry
 
 # 跳过备份创建
-.\vscode-cleanup-master.ps1 -All -NoBackup
+.\scripts\vscode-cleanup-master.ps1 -All -NoBackup
 
 # 包含便携版安装
-.\vscode-cleanup-master.ps1 -All -IncludePortable
+.\scripts\vscode-cleanup-master.ps1 -All -IncludePortable
 
 # 启用详细日志
-.\vscode-cleanup-master.ps1 -All -Verbose
+.\scripts\vscode-cleanup-master.ps1 -All -Verbose
 
 # 显示将要执行的操作而不实际执行
-.\vscode-cleanup-master.ps1 -All -WhatIf
+.\scripts\vscode-cleanup-master.ps1 -All -WhatIf
 ```
 
 ### 安装脚本选项
 ```powershell
 # 使用新的主脚本 (推荐)
-.\install.ps1 --master --all
+.\scripts\install.ps1 --master --all
 
 # 预览操作
-.\install.ps1 --master --preview
+.\scripts\install.ps1 --master --preview
 
 # 传统的独立脚本
-.\install.ps1 --clean
-.\install.ps1 --modify-ids
-.\install.ps1 --all
+.\scripts\install.ps1 --clean
+.\scripts\install.ps1 --modify-ids
+.\scripts\install.ps1 --all
 ```
 
 ## 命令行选项
@@ -224,9 +224,10 @@ Set-ExecutionPolicy RemoteSigned -Scope CurrentUser
 ### 调试模式
 ```powershell
 # 启用详细日志进行故障排除
-.\vscode-cleanup-master.ps1 -All -Verbose
+.\scripts\vscode-cleanup-master.ps1 -All -Verbose
 
-# 检查系统信息
+# 检查系统信息 (需要先导入模块)
+Import-Module .\scripts\modules\SystemDetection.psm1 -Force
 Show-SystemInformation
 
 # 测试系统兼容性
@@ -257,14 +258,15 @@ Test-SystemCompatibility
 ### 测试
 ```powershell
 # 测试单个模块
-Import-Module .\modules\Logger.psm1
+Import-Module .\scripts\modules\Logger.psm1 -Force
 Test-ModuleFunctionality
 
 # 测试系统兼容性
+Import-Module .\scripts\modules\SystemDetection.psm1 -Force
 Test-SystemCompatibility -Verbose
 
 # 预览操作
-.\vscode-cleanup-master.ps1 -Preview -All
+.\scripts\vscode-cleanup-master.ps1 -Preview -All
 ```
 
 ## 许可证

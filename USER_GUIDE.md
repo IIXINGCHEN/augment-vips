@@ -1,4 +1,4 @@
-# VS Code Cleanup Master - 完整使用文档
+﻿# VS Code Cleanup Master - 完整使用文档
 
 ## 🙏 致谢 / Acknowledgments
 
@@ -75,13 +75,13 @@ VS Code Cleanup Master 是一个专业的PowerShell工具套件，专门用于�
    Set-ExecutionPolicy RemoteSigned -Scope CurrentUser
    
    # 运行安装脚本
-   .\install.ps1 --master --all
+   .\scripts\install.ps1 --master --all
    ```
 
 3. **验证安装**
    ```powershell
    # 测试主脚本
-   .\vscode-cleanup-master.ps1 -Help
+   .\scripts\vscode-cleanup-master.ps1 -Help
    ```
 
 ### 方法二：手动安装
@@ -101,9 +101,9 @@ VS Code Cleanup Master 是一个专业的PowerShell工具套件，专门用于�
 2. **验证模块**
    ```powershell
    # 测试模块导入
-   Import-Module .\modules\Logger.psm1 -Force
-   Import-Module .\modules\SystemDetection.psm1 -Force
-   
+   Import-Module .\scripts\modules\Logger.psm1 -Force
+   Import-Module .\scripts\modules\SystemDetection.psm1 -Force
+
    # 运行系统兼容性检查
    Test-SystemCompatibility
    ```
@@ -114,22 +114,22 @@ VS Code Cleanup Master 是一个专业的PowerShell工具套件，专门用于�
 
 1. **预览操作**（推荐首次使用）
    ```powershell
-   .\vscode-cleanup-master.ps1 -Preview -All
+   .\scripts\vscode-cleanup-master.ps1 -Preview -All
    ```
 
 2. **执行完整清理**
    ```powershell
-   .\vscode-cleanup-master.ps1 -All
+   .\scripts\vscode-cleanup-master.ps1 -All
    ```
 
 3. **仅清理数据库**
    ```powershell
-   .\vscode-cleanup-master.ps1 -Clean
+   .\scripts\vscode-cleanup-master.ps1 -Clean
    ```
 
 4. **仅修改遥测ID**
    ```powershell
-   .\vscode-cleanup-master.ps1 -ModifyTelemetry
+   .\scripts\vscode-cleanup-master.ps1 -ModifyTelemetry
    ```
 
 ### 安全操作建议
@@ -145,7 +145,7 @@ VS Code Cleanup Master 是一个专业的PowerShell工具套件，专门用于�
 ### 命令行参数详解
 
 ```powershell
-.\vscode-cleanup-master.ps1 [参数]
+.\scripts\vscode-cleanup-master.ps1 [参数]
 ```
 
 | 参数 | 类型 | 说明 | 示例 |
@@ -166,37 +166,37 @@ VS Code Cleanup Master 是一个专业的PowerShell工具套件，专门用于�
 #### 场景1：首次使用
 ```powershell
 # 1. 检查系统兼容性
-.\vscode-cleanup-master.ps1 -Help
+.\scripts\vscode-cleanup-master.ps1 -Help
 
 # 2. 预览将要执行的操作
-.\vscode-cleanup-master.ps1 -Preview -All -Verbose
+.\scripts\vscode-cleanup-master.ps1 -Preview -All -Verbose
 
 # 3. 确认无误后执行
-.\vscode-cleanup-master.ps1 -All -Verbose
+.\scripts\vscode-cleanup-master.ps1 -All -Verbose
 ```
 
 #### 场景2：仅清理特定内容
 ```powershell
 # 仅清理数据库，不修改遥测ID
-.\vscode-cleanup-master.ps1 -Clean -Verbose
+.\scripts\vscode-cleanup-master.ps1 -Clean -Verbose
 
 # 仅修改遥测ID，不清理数据库
-.\vscode-cleanup-master.ps1 -ModifyTelemetry -Verbose
+.\scripts\vscode-cleanup-master.ps1 -ModifyTelemetry -Verbose
 ```
 
 #### 场景3：批量处理
 ```powershell
 # 处理包括便携版在内的所有VS Code安装
-.\vscode-cleanup-master.ps1 -All -IncludePortable -Verbose
+.\scripts\vscode-cleanup-master.ps1 -All -IncludePortable -Verbose
 
 # 快速处理，跳过备份（不推荐）
-.\vscode-cleanup-master.ps1 -All -NoBackup
+.\scripts\vscode-cleanup-master.ps1 -All -NoBackup
 ```
 
 #### 场景4：自定义日志
 ```powershell
 # 指定自定义日志文件
-.\vscode-cleanup-master.ps1 -All -LogFile "D:\MyLogs\vscode-cleanup.log" -Verbose
+.\scripts\vscode-cleanup-master.ps1 -All -LogFile "D:\MyLogs\vscode-cleanup.log" -Verbose
 ```
 
 ### 操作流程详解
@@ -245,7 +245,7 @@ VS Code Cleanup Master 是一个专业的PowerShell工具套件，专门用于�
 #### 查看备份统计
 ```powershell
 # 导入备份管理模块
-Import-Module .\modules\BackupManager.psm1 -Force
+Import-Module .\scripts\modules\BackupManager.psm1 -Force
 
 # 显示备份统计信息
 Show-BackupStatistics
@@ -302,7 +302,7 @@ $script:CustomPatterns = @(
 #### 配置日志级别
 ```powershell
 # 导入日志模块
-Import-Module .\modules\Logger.psm1 -Force
+Import-Module .\scripts\modules\Logger.psm1 -Force
 
 # 初始化日志（仅记录警告和错误）
 Initialize-Logger -LogFilePath "custom.log" -Level Warning -EnableConsole $true -EnableFile $true
@@ -346,7 +346,7 @@ Register-ScheduledTask -Action $action -Trigger $trigger -TaskName "VSCode Clean
 **解决方案**：
 ```powershell
 # 检查文件是否存在
-Test-Path .\modules\Logger.psm1
+Test-Path .\scripts\modules\Logger.psm1
 
 # 检查执行策略
 Get-ExecutionPolicy
@@ -355,7 +355,7 @@ Get-ExecutionPolicy
 Set-ExecutionPolicy RemoteSigned -Scope CurrentUser
 
 # 手动导入测试
-Import-Module .\modules\Logger.psm1 -Force -Verbose
+Import-Module .\scripts\modules\Logger.psm1 -Force -Verbose
 ```
 
 #### 2. SQLite3 未找到
@@ -431,7 +431,7 @@ $DebugPreference = "Continue"
 .\vscode-cleanup-master.ps1 -All
 
 # 查看系统信息
-Import-Module .\modules\SystemDetection.psm1 -Force
+Import-Module .\scripts\modules\SystemDetection.psm1 -Force
 Show-SystemInformation
 ```
 
@@ -550,7 +550,7 @@ if ($freeSpace -lt 5) {
 $modules = @("Logger", "SystemDetection", "VSCodeDiscovery", "BackupManager", "DatabaseCleaner", "TelemetryModifier")
 foreach ($module in $modules) {
     try {
-        Import-Module ".\modules\$module.psm1" -Force
+        Import-Module ".\scripts\modules\$module.psm1" -Force
         Write-Host "$module module OK" -ForegroundColor Green
     } catch {
         Write-Host "$module module ERROR: $($_.Exception.Message)" -ForegroundColor Red
@@ -589,7 +589,7 @@ Complete-LogProgress -Id <int>
 
 **使用示例**：
 ```powershell
-Import-Module .\modules\Logger.psm1 -Force
+Import-Module .\scripts\modules\Logger.psm1 -Force
 Initialize-Logger -LogFilePath "custom.log" -Level Info -EnableConsole $true -EnableFile $true
 Write-LogInfo "操作开始"
 Write-LogSuccess "操作完成"
@@ -614,7 +614,7 @@ Test-DiskSpace                                # 磁盘空间检查
 
 **使用示例**：
 ```powershell
-Import-Module .\modules\SystemDetection.psm1 -Force
+Import-Module .\scripts\modules\SystemDetection.psm1 -Force
 if (Test-SystemCompatibility) {
     Write-Host "系统兼容" -ForegroundColor Green
 } else {
@@ -640,7 +640,7 @@ Get-VSCodeInstallation -Type <VSCodeType>     # 获取特定类型安装
 
 **使用示例**：
 ```powershell
-Import-Module .\modules\VSCodeDiscovery.psm1 -Force
+Import-Module .\scripts\modules\VSCodeDiscovery.psm1 -Force
 $installations = Find-VSCodeInstallations -IncludePortable
 foreach ($install in $installations) {
     Write-Host "发现: $($install.Name) 位于 $($install.Path)"
@@ -665,7 +665,7 @@ Show-BackupStatistics                         # 显示备份统计
 
 **使用示例**：
 ```powershell
-Import-Module .\modules\BackupManager.psm1 -Force
+Import-Module .\scripts\modules\BackupManager.psm1 -Force
 Initialize-BackupManager -BackupDirectory "C:\Backups" -MaxAge 30 -MaxCount 10
 
 # 创建备份
@@ -699,7 +699,7 @@ Optimize-Database -DatabasePath <string>           # 优化数据库
 
 **使用示例**：
 ```powershell
-Import-Module .\modules\DatabaseCleaner.psm1 -Force
+Import-Module .\scripts\modules\DatabaseCleaner.psm1 -Force
 
 # 分析数据库
 $analysis = Get-DatabaseAnalysis -DatabasePath "C:\path\to\database.vscdb"
@@ -741,7 +741,7 @@ New-TelemetryIdPreview -IdTypes <string[]>                                   # �
 
 **使用示例**：
 ```powershell
-Import-Module .\modules\TelemetryModifier.psm1 -Force
+Import-Module .\scripts\modules\TelemetryModifier.psm1 -Force
 
 # 预览当前ID
 $currentIds = Get-CurrentTelemetryIds -StorageJsonPath "C:\path\to\storage.json"
@@ -950,7 +950,7 @@ $modules = @("Logger", "SystemDetection", "VSCodeDiscovery", "BackupManager", "D
 $moduleStatus = @{}
 
 foreach ($module in $modules) {
-    $modulePath = ".\modules\$module.psm1"
+    $modulePath = ".\scripts\modules\$module.psm1"
     if (Test-Path $modulePath) {
         try {
             Import-Module $modulePath -Force -ErrorAction Stop
@@ -1108,7 +1108,7 @@ $failedModules = @()
 
 foreach ($module in $modules) {
     try {
-        Import-Module ".\modules\$module.psm1" -Force -ErrorAction Stop
+        Import-Module ".\scripts\modules\$module.psm1" -Force -ErrorAction Stop
     } catch {
         $failedModules += $module
     }
