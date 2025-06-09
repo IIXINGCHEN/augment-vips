@@ -1,8 +1,6 @@
 # VS Code Cleanup Master - 故障排除指南
 
-## 🙏 致谢
-
-本项目基于 [azrilaiman2003/augment-vip](https://github.com/azrilaiman2003/augment-vip) 进行Windows系统优化开发。感谢原作者的贡献！
+> 💡 **提示**: 基本使用方法请参考 [USER_GUIDE.md](USER_GUIDE.md) 中的快速参考章节。本文档专注于解决具体的技术问题。
 
 ## 📋 目录
 
@@ -13,149 +11,89 @@
 - [VS Code检测问题](#vs-code检测问题)
 - [备份和恢复问题](#备份和恢复问题)
 - [性能问题](#性能问题)
-- [日志和调试](#日志和调试)
+- [高级调试](#高级调试)
 
 ## 🚨 PowerShell执行策略问题
 
-### 问题描述
-这是最常见的问题。Windows系统默认阻止运行未签名的PowerShell脚本，会出现以下错误：
+> 💡 **快速解决**: 运行 `Set-ExecutionPolicy RemoteSigned -Scope CurrentUser`，详细说明请参考 [USER_GUIDE.md](USER_GUIDE.md)。
 
-```
-无法加载文件 xxx.ps1。未对文件进行数字签名。无法在当前系统上运行该脚本。
-UnauthorizedAccess
-Execution of scripts is disabled on this system
-```
+### 高级执行策略问题
 
-### 解决方案
-
-#### 方案1：永久设置执行策略（推荐）
+#### 企业环境中的组策略限制
 ```powershell
-# 检查当前执行策略
+# 检查组策略设置
 Get-ExecutionPolicy -List
 
-# 为当前用户设置（推荐，最安全）
-Set-ExecutionPolicy RemoteSigned -Scope CurrentUser
-
-# 为所有用户设置（需要管理员权限）
-Set-ExecutionPolicy RemoteSigned -Scope LocalMachine
-
-# 验证设置
-Get-ExecutionPolicy -Scope CurrentUser
+# 如果显示 "MachinePolicy" 或 "UserPolicy"，说明被组策略限制
+# 解决方案：联系IT管理员或使用便携版PowerShell
 ```
 
-#### 方案2：临时绕过执行策略
+#### 文件来源标记问题
 ```powershell
-# 单次运行脚本
-PowerShell -ExecutionPolicy Bypass -File .\scripts\install.ps1 --master --all
+# 检查文件是否被标记为来自网络
+Get-Item .\scripts\*.ps1 | Get-ItemProperty -Name Zone.Identifier -ErrorAction SilentlyContinue
 
-# 或者在当前会话中临时设置
-Set-ExecutionPolicy Bypass -Scope Process
-```
-
-#### 方案3：解除文件阻止
-```powershell
-# 解除单个文件阻止
-Unblock-File .\scripts\install.ps1
-
-# 解除所有脚本文件阻止
-Get-ChildItem .\scripts\*.ps1 | Unblock-File
-Get-ChildItem .\scripts\modules\*.psm1 | Unblock-File
-
-# 批量解除阻止
-Unblock-File .\scripts\*.ps1
-Unblock-File .\scripts\modules\*.psm1
-```
-
-### 执行策略说明
-
-| 策略 | 说明 | 安全级别 | 推荐度 |
-|------|------|----------|--------|
-| `Restricted` | 禁止所有脚本（Windows默认） | 最高 | ❌ 太严格 |
-| `RemoteSigned` | 本地脚本可运行，远程脚本需签名 | 高 | ✅ 推荐 |
-| `Unrestricted` | 允许所有脚本，远程脚本有警告 | 中 | ⚠️ 谨慎使用 |
-| `Bypass` | 无限制，无警告 | 低 | ❌ 仅临时使用 |
-
-### 验证解决方案
-```powershell
-# 检查执行策略设置
-Get-ExecutionPolicy -List
-
-# 测试脚本运行
-.\scripts\vscode-cleanup-master.ps1 -Help
-
-# 测试模块导入
-Import-Module .\scripts\modules\Logger.psm1 -Force
+# 批量移除网络来源标记
+Get-ChildItem .\scripts\ -Recurse | Unblock-File
 ```
 
 ## 🔧 模块导入问题
 
-### 问题描述
-```
-Failed to import module Logger.psm1
-Import-Module : 无法加载指定的模块
-```
-
-### 解决方案
+### 高级模块问题诊断
 ```powershell
-# 1. 检查文件是否存在
-Test-Path .\scripts\modules\Logger.psm1
-
-# 2. 检查执行策略（参考上面的解决方案）
-Get-ExecutionPolicy
-
-# 3. 解除模块文件阻止
-Unblock-File .\scripts\modules\*.psm1
-
-# 4. 强制导入模块
-Import-Module .\scripts\windows\modules\Logger.psm1 -Force -Verbose
-
-# 5. 检查模块路径
-$env:PSModulePath -split ';'
-
-# 6. 测试所有模块
+# 检查模块依赖关系
 $modules = @("Logger", "SystemDetection", "VSCodeDiscovery", "BackupManager", "DatabaseCleaner", "TelemetryModifier")
 foreach ($module in $modules) {
-    try {
-        Import-Module ".\scripts\windows\modules\$module.psm1" -Force
-        Write-Host "$module`: ✅ OK" -ForegroundColor Green
-    } catch {
-        Write-Host "$module`: ❌ ERROR - $($_.Exception.Message)" -ForegroundColor Red
+    $modulePath = ".\scripts\windows\modules\$module.psm1"
+    if (Test-Path $modulePath) {
+        try {
+            Import-Module $modulePath -Force -PassThru | Select-Object Name, Version, ModuleType
+        } catch {
+            Write-Warning "Failed to import $module`: $($_.Exception.Message)"
+        }
+    } else {
+        Write-Error "Module file not found: $modulePath"
     }
 }
 ```
 
-## 📦 依赖项问题
-
-### SQLite3 未找到
+### 模块版本冲突
 ```powershell
-# 检查是否已安装
-sqlite3 -version
+# 检查已加载的同名模块
+Get-Module | Where-Object { $_.Name -in @("Logger", "SystemDetection") }
 
-# 使用包管理器安装
-# Chocolatey
-choco install sqlite
-
-# Scoop
-scoop install sqlite
-
-# winget
-winget install sqlite.sqlite
-
-# 手动安装
-# 1. 下载 SQLite3 from https://www.sqlite.org/download.html
-# 2. 解压到 C:\sqlite3
-# 3. 添加到 PATH 环境变量
+# 强制移除冲突模块
+Remove-Module Logger, SystemDetection -Force -ErrorAction SilentlyContinue
 ```
 
-### curl 和 jq 未找到（可选依赖）
-```powershell
-# 安装 curl（Windows 10+ 通常已内置）
-winget install curl.curl
+## 📦 依赖项问题
 
-# 安装 jq
-choco install jq
-# 或
-scoop install jq
+### 高级依赖问题
+```powershell
+# 检查所有依赖项状态
+$dependencies = @{
+    "sqlite3" = "sqlite3 -version"
+    "curl" = "curl --version"
+    "git" = "git --version"
+}
+
+foreach ($dep in $dependencies.GetEnumerator()) {
+    try {
+        $result = Invoke-Expression $dep.Value 2>$null
+        Write-Host "✅ $($dep.Key): Available" -ForegroundColor Green
+    } catch {
+        Write-Host "❌ $($dep.Key): Missing" -ForegroundColor Red
+    }
+}
+```
+
+### 环境变量问题
+```powershell
+# 检查PATH环境变量
+$env:PATH -split ';' | Where-Object { $_ -like "*sqlite*" -or $_ -like "*curl*" }
+
+# 临时添加到PATH（当前会话）
+$env:PATH += ";C:\sqlite3;C:\curl"
 ```
 
 ## 🔐 权限问题
@@ -257,56 +195,47 @@ Get-Process PowerShell | Select-Object Name, WorkingSet, VirtualMemorySize
 # 重启PowerShell会话
 ```
 
-## 📊 日志和调试
+## � 高级调试
 
-### 启用详细调试
+### 深度系统诊断
 ```powershell
-# 全局调试设置
-$DebugPreference = "Continue"
-$VerbosePreference = "Continue"
-
-# 运行脚本
-.\run.ps1 -Operation All -VerboseOutput
-
-# 或直接使用Windows脚本
-.\scripts\windows\vscode-cleanup-master.ps1 -All -Verbose
-
-# 查看系统信息
-Import-Module .\scripts\windows\modules\SystemDetection.psm1 -Force
-Show-SystemInformation
-```
-
-### 日志分析
-```powershell
-# 查看最新日志
-$latestLog = Get-ChildItem .\logs\ | Sort-Object LastWriteTime -Descending | Select-Object -First 1
-Get-Content $latestLog.FullName
-
-# 搜索错误
-Select-String -Path ".\logs\*.log" -Pattern "ERROR|CRITICAL|FAILED"
-
-# 统计操作结果
-Select-String -Path ".\logs\*.log" -Pattern "SUCCESS|completed" | Measure-Object
-```
-
-### 收集诊断信息
-```powershell
-# 一键收集诊断信息
-$diagInfo = @{
-    Timestamp = Get-Date
-    OSVersion = [System.Environment]::OSVersion.VersionString
-    PSVersion = $PSVersionTable.PSVersion.ToString()
+# 完整系统状态检查
+$systemDiag = @{
+    PowerShellVersion = $PSVersionTable
     ExecutionPolicy = Get-ExecutionPolicy -List
-    LastError = $Error[0]
-    VSCodePaths = @(
-        "$env:LOCALAPPDATA\Programs\Microsoft VS Code",
-        "$env:ProgramFiles\Microsoft VS Code",
-        "$env:APPDATA\Code"
-    ) | Where-Object { Test-Path $_ }
+    ModulePath = $env:PSModulePath -split ';'
+    ProcessList = Get-Process | Where-Object { $_.ProcessName -like "*code*" }
+    DiskSpace = Get-CimInstance -ClassName Win32_LogicalDisk | Select-Object DeviceID, @{Name="FreeSpaceGB";Expression={[Math]::Round($_.FreeSpace/1GB,2)}}
+    NetworkConnectivity = Test-NetConnection -ComputerName "github.com" -Port 443 -InformationLevel Quiet
 }
 
-$diagInfo | ConvertTo-Json -Depth 3 | Out-File "diagnostic-info.json"
-Write-Host "诊断信息已保存到 diagnostic-info.json"
+$systemDiag | ConvertTo-Json -Depth 3 | Out-File "system-diagnostic.json"
+```
+
+### 性能分析
+```powershell
+# 监控脚本性能
+Measure-Command { .\run.ps1 -Operation All -Preview }
+
+# 内存使用监控
+$before = Get-Process PowerShell | Measure-Object WorkingSet -Sum
+.\run.ps1 -Operation Clean
+$after = Get-Process PowerShell | Measure-Object WorkingSet -Sum
+Write-Host "Memory usage: $([Math]::Round(($after.Sum - $before.Sum) / 1MB, 2)) MB"
+```
+
+### 错误追踪
+```powershell
+# 启用详细错误追踪
+$ErrorActionPreference = "Stop"
+$VerbosePreference = "Continue"
+
+try {
+    .\run.ps1 -Operation All
+} catch {
+    $_.Exception | Format-List -Force
+    $_.ScriptStackTrace
+}
 ```
 
 ## 🔄 重置和恢复

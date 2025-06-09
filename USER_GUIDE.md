@@ -11,6 +11,7 @@ This project is based on [azrilaiman2003/augment-vip](https://github.com/azrilai
 ## 📋 目录
 
 - [致谢](#致谢--acknowledgments)
+- [快速参考](#快速参考)
 - [概述](#概述)
 - [系统要求](#系统要求)
 - [安装指南](#安装指南)
@@ -21,6 +22,59 @@ This project is based on [azrilaiman2003/augment-vip](https://github.com/azrilai
 - [最佳实践](#最佳实践)
 - [API参考](#api参考)
 - [常见问题](#常见问题)
+
+## 🚀 快速参考
+
+### 基本命令
+```powershell
+# 预览所有操作
+.\run.ps1 -Operation All -Preview
+
+# 执行完整清理
+.\run.ps1 -Operation All
+
+# 仅清理数据库
+.\run.ps1 -Operation Clean
+
+# 仅修改遥测ID
+.\run.ps1 -Operation ModifyTelemetry
+
+# 显示帮助
+.\run.ps1 -Help
+```
+
+### 📋 命令参数速查
+
+| 参数 | 说明 | 示例 |
+|------|------|------|
+| `-Operation Clean` | 仅清理数据库 | `-Operation Clean` |
+| `-Operation ModifyTelemetry` | 仅修改遥测ID | `-Operation ModifyTelemetry` |
+| `-Operation All` | 执行所有操作 | `-Operation All` |
+| `-Preview` | 预览模式 | `-Operation All -Preview` |
+| `-NoBackup` | 跳过备份 | `-Operation All -NoBackup` |
+| `-UsePython` | 使用Python实现 | `-Operation All -UsePython` |
+| `-UseWindows` | 强制使用Windows实现 | `-Operation All -UseWindows` |
+| `-Help` | 显示帮助 | `-Help` |
+
+### 🛠️ 常见错误速查
+
+| 错误 | 原因 | 解决方案 |
+|------|------|----------|
+| `执行策略阻止脚本` | Windows默认安全策略 | `Set-ExecutionPolicy RemoteSigned -Scope CurrentUser` |
+| `未对文件进行数字签名` | 执行策略限制 | `PowerShell -ExecutionPolicy Bypass -File script.ps1` |
+| `模块导入失败` | 执行策略或文件阻止 | 设置执行策略 + `Unblock-File .\scripts\windows\modules\*.psm1` |
+| `SQLite3 未找到` | 缺少依赖 | `choco install sqlite` |
+| `权限不足` | 需要管理员权限 | 以管理员身份运行PowerShell |
+| `VS Code 未找到` | 路径问题 | 检查VS Code安装路径 |
+
+### 📊 模块功能速查
+
+**Logger.psm1**: 日志系统 - `Initialize-Logger`, `Write-LogInfo/Warning/Error`
+**SystemDetection.psm1**: 系统检测 - `Test-SystemCompatibility`, `Get-SystemInformation`
+**VSCodeDiscovery.psm1**: VS Code发现 - `Find-VSCodeInstallations`, `Get-VSCodeInstallation`
+**BackupManager.psm1**: 备份管理 - `New-FileBackup`, `Restore-FileBackup`, `Clear-OldBackups`
+**DatabaseCleaner.psm1**: 数据库清理 - `Clear-VSCodeDatabase`, `Show-CleaningPreview`
+**TelemetryModifier.psm1**: 遥测修改 - `Set-VSCodeTelemetryIds`, `New-SecureUUID`
 
 ## 🎯 概述
 

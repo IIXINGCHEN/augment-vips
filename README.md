@@ -366,9 +366,8 @@ Test-SystemCompatibility -Verbose
 
 ## 📚 文档
 
-- **[完整用户指南](USER_GUIDE.md)** - 详细的使用说明和API参考
-- **[快速参考](QUICK_REFERENCE.md)** - 命令速查和常用操作
-- **[故障排除指南](TROUBLESHOOTING.md)** - 常见问题解决方案，包括执行策略问题
+- **[完整用户指南](USER_GUIDE.md)** - 详细的使用说明、快速参考和API文档
+- **[故障排除指南](TROUBLESHOOTING.md)** - 高级问题诊断和解决方案
 - **[致谢文档](CREDITS.md)** - 原作者致谢和项目贡献
 
 ---
