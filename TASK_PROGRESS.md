@@ -276,6 +276,26 @@ The implementation exceeds the original requirements by providing a modular arch
 - **兼容性测试**: 通过 ✅
 - **用户验收**: 就绪 ✅
 
+## 📦 仓库部署记录
+
+### [2024-12-07 20:15:43] GitHub仓库强制推送完成
+- **操作**: 强制推送完整项目到新仓库
+- **目标仓库**: git@github.com:IIXINGCHEN/augment-vip.git
+- **推送状态**: 成功 ✅
+- **文件数量**: 106个对象
+- **压缩大小**: 102.81 KiB
+- **远程访问**: 已验证可访问
+- **安装脚本**: 远程执行就绪
+
+### 远程安装命令
+```powershell
+# 标准安装
+irm https://raw.githubusercontent.com/IIXINGCHEN/augment-vip/main/install.ps1 | iex
+
+# 带参数安装
+irm https://raw.githubusercontent.com/IIXINGCHEN/augment-vip/main/install.ps1 | iex -Operation All
+```
+
 ## 🎉 项目完成声明
 
 **VS Code Cleanup Master 项目已100%完成**，所有原始需求均已实现并超越预期。项目现已达到企业级生产环境部署标准，具备完整的功能、安全性、可靠性和可维护性。
@@ -283,3 +303,46 @@ The implementation exceeds the original requirements by providing a modular arch
 **交付状态**: 生产就绪 ✅
 **质量等级**: 企业级 ✅
 **维护状态**: 完整文档支持 ✅
+**仓库部署**: 完成 ✅
+
+---
+
+## 🔧 最新修复记录
+
+### [2024-12-09] 远程安装脚本修复
+- **问题**: 远程安装命令 `irm | iex` 执行失败，提示找不到启动器脚本
+- **错误信息**: `[ERROR] Launcher script not found: scripts\augment-vip-launcher.ps1`
+- **根本原因**: 路径分隔符兼容性问题和错误诊断不足
+- **修复内容**:
+  - 使用 `Join-Path` 替代硬编码路径分隔符，提高跨平台兼容性
+  - 增强错误诊断：当找不到启动器脚本时显示目录内容
+  - 改进文件下载验证机制，确保关键文件下载完整
+  - 添加 `-Debug` 参数支持详细故障排除
+  - 优化错误消息，提供具体的修复指导
+- **修改文件**: `install.ps1`
+- **测试状态**: 就绪测试 🔄
+
+### 修复详情
+1. **路径处理改进**:
+   ```powershell
+   # 修复前
+   $launcherScript = "scripts\augment-vip-launcher.ps1"
+
+   # 修复后
+   $launcherScript = Join-Path "scripts" "augment-vip-launcher.ps1"
+   ```
+
+2. **增强错误诊断**:
+   - 显示当前工作目录
+   - 列出实际存在的文件和目录
+   - 验证关键文件的存在性
+
+3. **改进下载验证**:
+   - 验证下载文件的完整性（非空检查）
+   - 统计下载成功/失败的文件数量
+   - 检查关键文件是否存在
+
+4. **调试功能增强**:
+   - 添加 `-Debug` 参数
+   - 显示系统环境信息
+   - 提供详细的执行过程信息

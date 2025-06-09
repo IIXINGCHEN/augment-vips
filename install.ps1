@@ -39,21 +39,24 @@ param(
     [Parameter(Mandatory = $false)]
     [ValidateSet("Clean", "ModifyTelemetry", "All", "Preview")]
     [string]$Operation = "All",
-    
+
     [Parameter(Mandatory = $false)]
     [switch]$NoBackup,
-    
+
     [Parameter(Mandatory = $false)]
     [switch]$UsePython,
-    
+
     [Parameter(Mandatory = $false)]
     [switch]$UseWindows,
-    
+
     [Parameter(Mandatory = $false)]
     [switch]$SkipInstall,
-    
+
     [Parameter(Mandatory = $false)]
-    [switch]$Help
+    [switch]$Help,
+
+    [Parameter(Mandatory = $false)]
+    [switch]$DetailedOutput
 )
 
 # Global variables
@@ -112,6 +115,7 @@ Parameters:
   -UsePython             Force use of Python cross-platform implementation
   -UseWindows            Force use of Windows PowerShell implementation
   -SkipInstall           Skip installation and only run operations
+  -DetailedOutput        Enable detailed debugging output for troubleshooting
   -Help                  Show this help information
 
 Examples:
@@ -198,20 +202,66 @@ function Install-Repository {
             "scripts/windows/modules/TelemetryModifier.psm1",
             "config/config.json"
         )
-        
+
+        $downloadedFiles = @()
+        $failedFiles = @()
+
         foreach ($file in $filesToDownload) {
             $url = "$script:RawUrl/$file"
             $localPath = Join-Path $script:InstallDir $file
             $localDir = Split-Path $localPath -Parent
-            
+
             if (-not (Test-Path $localDir)) {
                 New-Item -ItemType Directory -Path $localDir -Force | Out-Null
             }
-            
+
             Write-Info "Downloading: $file"
-            Invoke-WebRequest -Uri $url -OutFile $localPath -UseBasicParsing
+            try {
+                Invoke-WebRequest -Uri $url -OutFile $localPath -UseBasicParsing
+
+                # Verify file was downloaded and has content
+                if ((Test-Path $localPath) -and (Get-Item $localPath).Length -gt 0) {
+                    $downloadedFiles += $file
+                    Write-Info "  ✓ Downloaded successfully"
+                } else {
+                    $failedFiles += $file
+                    Write-Warning "  ✗ Downloaded but file is empty or missing"
+                }
+            }
+            catch {
+                $failedFiles += $file
+                Write-Warning "  ✗ Failed to download: $($_.Exception.Message)"
+            }
         }
-        
+
+        Write-Info "Download summary:"
+        Write-Info "  Successfully downloaded: $($downloadedFiles.Count) files"
+        if ($failedFiles.Count -gt 0) {
+            Write-Warning "  Failed to download: $($failedFiles.Count) files"
+            foreach ($failed in $failedFiles) {
+                Write-Warning "    - $failed"
+            }
+        }
+
+        # Check if critical files are present
+        $criticalFiles = @("scripts/augment-vip-launcher.ps1")
+        $missingCritical = @()
+
+        foreach ($critical in $criticalFiles) {
+            $criticalPath = Join-Path $script:InstallDir $critical
+            if (-not (Test-Path $criticalPath)) {
+                $missingCritical += $critical
+            }
+        }
+
+        if ($missingCritical.Count -gt 0) {
+            Write-Error "Critical files missing after download:"
+            foreach ($missing in $missingCritical) {
+                Write-Error "  - $missing"
+            }
+            return $false
+        }
+
         Write-Success "Repository files downloaded successfully"
         return $true
     }
@@ -228,38 +278,56 @@ function Invoke-AugmentVIP {
         [bool]$UsePython,
         [bool]$UseWindows
     )
-    
+
     Write-Info "Running Augment VIP operation: $Operation"
-    
+
     Push-Location $script:InstallDir
-    
+
     try {
-        $launcherScript = "scripts\augment-vip-launcher.ps1"
-        
+        # Use Join-Path for cross-platform compatibility
+        $launcherScript = Join-Path "scripts" "augment-vip-launcher.ps1"
+        $fullLauncherPath = Join-Path $script:InstallDir $launcherScript
+
+        Write-Info "Current directory: $(Get-Location)"
+        Write-Info "Looking for launcher script at: $launcherScript"
+        Write-Info "Full launcher path: $fullLauncherPath"
+
         if (-not (Test-Path $launcherScript)) {
             Write-Error "Launcher script not found: $launcherScript"
+            Write-Info "Listing contents of current directory:"
+            Get-ChildItem -Path . -Recurse -Name | ForEach-Object { Write-Info "  $_" }
+
+            Write-Info "Checking if scripts directory exists:"
+            if (Test-Path "scripts") {
+                Write-Info "Scripts directory found. Contents:"
+                Get-ChildItem -Path "scripts" -Recurse -Name | ForEach-Object { Write-Info "  scripts\$_" }
+            } else {
+                Write-Warning "Scripts directory not found"
+            }
+
             return $false
         }
-        
+
         $params = @{
             "Operation" = $Operation
         }
-        
+
         if (-not $CreateBackup) {
             $params["NoBackup"] = $true
         }
-        
+
         if ($UsePython) {
             $params["UsePython"] = $true
         }
-        
+
         if ($UseWindows) {
             $params["UseWindows"] = $true
         }
-        
+
+        Write-Info "Executing launcher script with parameters: $($params.Keys -join ', ')"
         & $launcherScript @params
         $success = $LASTEXITCODE -eq 0
-        
+
         Pop-Location
         return $success
     }
@@ -275,11 +343,26 @@ function Main {
         Show-Help
         return 0
     }
-    
+
+    # Enable detailed output if requested
+    if ($DetailedOutput) {
+        $VerbosePreference = "Continue"
+        Write-Info "Detailed output mode enabled"
+    }
+
     Write-Info "Augment VIP Remote Installer v1.0.0"
     Write-Info "======================================"
     Write-Info "Repository: $script:RepoUrl"
     Write-Info "Install Directory: $script:InstallDir"
+
+    if ($DetailedOutput) {
+        Write-Info "System Information:"
+        Write-Info "  PowerShell Version: $($PSVersionTable.PSVersion)"
+        Write-Info "  OS: $($PSVersionTable.OS)"
+        Write-Info "  Platform: $($PSVersionTable.Platform)"
+        Write-Info "  Current User: $($env:USERNAME)"
+        Write-Info "  Temp Directory: $($env:TEMP)"
+    }
     
     if (-not $SkipInstall) {
         # Install repository
