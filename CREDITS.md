@@ -87,9 +87,31 @@ We deeply appreciate **azrilaiman2003** for creating the original augment-vip pr
 
 ## 📄 许可证 / License
 
-本项目遵循原项目的许可证条款，同时对新增代码部分采用开源许可证。
+本项目严格遵循原项目的 **MIT License** 条款，确保对原作者权利的完全尊重。
 
-This project follows the original project's license terms, while new code additions are under open source license.
+### 许可证详情 / License Details
+- **原始项目许可证**: MIT License © 2024 azrilaiman2003
+- **增强版许可证**: MIT License © 2024 IIXINGCHEN
+- **许可证文件**: [LICENSE](LICENSE)
+- **免责声明**: [DISCLAIMER.md](DISCLAIMER.md)
+
+### 权利和义务 / Rights and Obligations
+根据MIT License，用户享有以下权利：
+- ✅ 商业使用 (Commercial use)
+- ✅ 修改 (Modification)
+- ✅ 分发 (Distribution)
+- ✅ 私人使用 (Private use)
+
+同时需要履行以下义务：
+- 📋 包含许可证和版权声明 (License and copyright notice)
+- ⚖️ 免责声明 (Disclaimer)
+
+### 法律保护 / Legal Protection
+本项目按"原样"提供，不提供任何明示或暗示的保证。详细的法律条款和免责声明请参阅：
+- [LICENSE](LICENSE) - 完整的MIT许可证条款
+- [DISCLAIMER.md](DISCLAIMER.md) - 详细的免责声明和使用风险
+
+This project follows the original project's **MIT License** terms, ensuring full respect for the original author's rights.
 
 ## 🔗 相关链接 / Related Links
 

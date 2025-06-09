@@ -43,6 +43,13 @@
 - python3-venv (虚拟环境支持)
 - 基本的系统工具 (bash, chmod等)
 
+### ⚠️ 重要安全提醒
+**使用前必读**：本工具会修改VS Code的数据库和配置文件，存在一定风险。请务必：
+- 📋 **阅读免责声明** - 详细了解使用风险，请参阅 [免责声明](DISCLAIMER.md)
+- 💾 **备份重要数据** - 使用前备份VS Code配置和重要项目
+- 🧪 **测试环境验证** - 建议先在测试环境中验证功能
+- ⚖️ **自行承担风险** - 用户完全自行承担使用风险
+
 ### ⚠️ 重要：PowerShell执行策略设置
 Windows系统默认阻止运行未签名的PowerShell脚本。在运行本项目脚本前，您需要设置执行策略：
 
@@ -356,9 +363,20 @@ Test-SystemCompatibility -Verbose
 .\scripts\windows\vscode-cleanup-master.ps1 -Preview -All
 ```
 
-## 许可证
+## 📄 许可证
 
-本项目是Augment VIP套件的一部分，遵循项目的许可证条款。
+本项目基于 [azrilaiman2003/augment-vip](https://github.com/azrilaiman2003/augment-vip) 进行开发，遵循 **MIT License**。
+
+### 许可证信息
+- **原始项目**: MIT License © 2024 azrilaiman2003
+- **Windows增强版**: MIT License © 2024 IIXINGCHEN
+- **许可证文件**: [LICENSE](LICENSE)
+
+### 使用条款
+本软件按"原样"提供，不提供任何明示或暗示的保证。详细条款请参阅 [LICENSE](LICENSE) 文件。
+
+### 致谢要求
+使用本项目时，请保留对原作者 azrilaiman2003 和增强版作者的适当致谢。
 
 ## 支持
 
@@ -369,6 +387,7 @@ Test-SystemCompatibility -Verbose
 - **[完整用户指南](USER_GUIDE.md)** - 详细的使用说明、快速参考和API文档
 - **[故障排除指南](TROUBLESHOOTING.md)** - 高级问题诊断和解决方案
 - **[致谢文档](CREDITS.md)** - 原作者致谢和项目贡献
+- **[免责声明](DISCLAIMER.md)** - 重要的使用风险和法律声明
 
 ---
 
