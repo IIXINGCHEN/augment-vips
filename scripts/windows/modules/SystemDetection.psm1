@@ -363,16 +363,68 @@ function Test-DiskSpace {
     }
 }
 
+<#
+.SYNOPSIS
+    Loads and validates project configuration
+.PARAMETER ConfigPath
+    Path to configuration file
+.OUTPUTS
+    PSCustomObject - Configuration object
+#>
+function Get-ProjectConfiguration {
+    [CmdletBinding()]
+    param(
+        [string]$ConfigPath = ".\config\config.json"
+    )
+
+    try {
+        if (-not (Test-Path $ConfigPath)) {
+            Write-LogWarning "Configuration file not found: $ConfigPath"
+            return $null
+        }
+
+        $configContent = Get-Content $ConfigPath -Raw | ConvertFrom-Json
+        Write-LogDebug "Loaded configuration from: $ConfigPath"
+        return $configContent
+    }
+    catch {
+        Write-LogError "Failed to load configuration" -Exception $_.Exception
+        return $null
+    }
+}
+
+<#
+.SYNOPSIS
+    Gets the list of required modules from configuration
+.OUTPUTS
+    string[] - Array of module names
+#>
+function Get-RequiredModules {
+    [CmdletBinding()]
+    param()
+
+    $config = Get-ProjectConfiguration
+    if ($config -and $config.modules -and $config.modules.windows -and $config.modules.windows.required) {
+        return $config.modules.windows.required
+    }
+
+    # Fallback to hardcoded list if config is not available
+    Write-LogWarning "Using fallback module list"
+    return @("Logger", "SystemDetection", "VSCodeDiscovery", "BackupManager", "DatabaseCleaner", "TelemetryModifier")
+}
+
 # Export module functions
 Export-ModuleMember -Function @(
     'Test-SystemCompatibility',
     'Test-WindowsVersion',
-    'Test-PowerShellVersion', 
+    'Test-PowerShellVersion',
     'Test-Dependencies',
     'Test-ExecutionPolicy',
     'Test-AdministratorPrivileges',
     'Get-SystemInformation',
     'Show-SystemInformation',
     'Test-VSCodeOperationRequirements',
-    'Test-DiskSpace'
+    'Test-DiskSpace',
+    'Get-ProjectConfiguration',
+    'Get-RequiredModules'
 )

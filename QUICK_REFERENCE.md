@@ -67,7 +67,7 @@ Test-SystemCompatibility
 ### 备份管理
 ```powershell
 # 导入备份模块
-Import-Module .\scripts\modules\BackupManager.psm1 -Force
+Import-Module .\scripts\windows\modules\BackupManager.psm1 -Force
 
 # 初始化备份管理器
 Initialize-BackupManager -BackupDirectory ".\data\backups" -MaxAge 30 -MaxCount 10
@@ -89,7 +89,7 @@ Clear-OldBackups -Force
 ### 日志管理
 ```powershell
 # 导入日志模块
-Import-Module .\scripts\modules\Logger.psm1 -Force
+Import-Module .\scripts\windows\modules\Logger.psm1 -Force
 
 # 初始化日志
 Initialize-Logger -LogFilePath "custom.log" -Level Info -EnableConsole $true -EnableFile $true
@@ -137,7 +137,7 @@ $standardVSCode = Get-VSCodeInstallation -Type Standard
 .\health-check.ps1 -Detailed
 
 # 检查系统信息
-Import-Module .\scripts\modules\SystemDetection.psm1 -Force
+Import-Module .\scripts\windows\modules\SystemDetection.psm1 -Force
 Show-SystemInformation
 
 # 测试模块导入

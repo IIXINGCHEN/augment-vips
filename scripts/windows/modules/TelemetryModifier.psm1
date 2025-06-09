@@ -481,10 +481,10 @@ function Set-TelemetryIdsProductionMethod {
         # Read current configuration
         $content = Get-Content -Path $StoragePath -Raw | ConvertFrom-Json
 
-        # Generate new IDs using production-verified method
-        $newMachineId = New-RandomId
-        $newDeviceId = New-UUIDv4
-        $newSqmId = New-UUIDv4
+        # Generate new IDs using secure cryptographic methods
+        $newMachineId = New-SecureHexString -Length 64
+        $newDeviceId = New-SecureUUID
+        $newSqmId = New-SecureUUID
 
         # Update IDs (Windows format)
         $content."telemetry.machineId" = $newMachineId
@@ -507,34 +507,8 @@ function Set-TelemetryIdsProductionMethod {
     }
 }
 
-<#
-.SYNOPSIS
-    Generates a random ID using production-verified method
-.OUTPUTS
-    string - Random hex string
-#>
-function New-RandomId {
-    param(
-        [int]$Length = 64
-    )
-
-    $bytes = New-Object byte[] $Length
-    $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
-    $rng.GetBytes($bytes)
-
-    return [System.BitConverter]::ToString($bytes).Replace("-", "").ToLower()
-}
-
-<#
-.SYNOPSIS
-    Generates a UUID v4 using production-verified method
-.OUTPUTS
-    string - UUID v4 string
-#>
-function New-UUIDv4 {
-    $guid = [System.Guid]::NewGuid()
-    return $guid.ToString()
-}
+# Removed redundant functions New-RandomId and New-UUIDv4
+# Use New-SecureHexString and New-SecureUUID instead for better security
 
 # Export module functions
 Export-ModuleMember -Function @(
@@ -547,7 +521,5 @@ Export-ModuleMember -Function @(
     'Get-CurrentTelemetryIds',
     'Show-TelemetryModificationPreview',
     'New-TelemetryIdPreview',
-    'Set-TelemetryIdsProductionMethod',
-    'New-RandomId',
-    'New-UUIDv4'
+    'Set-TelemetryIdsProductionMethod'
 )

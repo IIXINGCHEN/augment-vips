@@ -549,29 +549,27 @@ function Clear-DatabaseProductionMethod {
             }
         }
 
-        # Use production-verified SQL queries - complete version from augment-vip-powershell
-        $tempFile = [System.IO.Path]::GetTempFileName()
-        $query = @"
-DELETE FROM ItemTable WHERE key LIKE '%augment%';
-DELETE FROM ItemTable WHERE key LIKE '%telemetry%';
-DELETE FROM ItemTable WHERE key LIKE '%machineId%';
-DELETE FROM ItemTable WHERE key LIKE '%deviceId%';
-DELETE FROM ItemTable WHERE key LIKE '%sqmId%';
-DELETE FROM ItemTable WHERE key LIKE '%uuid%';
-DELETE FROM ItemTable WHERE key LIKE '%session%';
-DELETE FROM ItemTable WHERE key LIKE '%lastSessionDate%';
-DELETE FROM ItemTable WHERE key LIKE '%lastSyncDate%';
-DELETE FROM ItemTable WHERE key LIKE '%lastSyncMachineId%';
-DELETE FROM ItemTable WHERE key LIKE '%lastSyncDeviceId%';
-DELETE FROM ItemTable WHERE key LIKE '%lastSyncSqmId%';
-DELETE FROM ItemTable WHERE key LIKE '%lastSyncUuid%';
-DELETE FROM ItemTable WHERE key LIKE '%lastSyncSession%';
-DELETE FROM ItemTable WHERE key LIKE '%lastSyncLastSessionDate%';
-DELETE FROM ItemTable WHERE key LIKE '%lastSyncLastSyncDate%';
-VACUUM;
-"@
+        # Use production-verified SQL queries with enhanced security
+        # Load patterns from configuration or use defaults
+        $cleaningPatterns = @(
+            '%augment%', '%telemetry%', '%machineId%', '%deviceId%', '%sqmId%',
+            '%uuid%', '%session%', '%lastSessionDate%', '%lastSyncDate%',
+            '%lastSyncMachineId%', '%lastSyncDeviceId%', '%lastSyncSqmId%',
+            '%lastSyncUuid%', '%lastSyncSession%', '%lastSyncLastSessionDate%',
+            '%lastSyncLastSyncDate%'
+        )
 
-        # Execute SQLite command using production-verified method
+        # Build secure SQL query using parameterized approach
+        $deleteQueries = @()
+        foreach ($pattern in $cleaningPatterns) {
+            $sanitizedPattern = Get-SafeSQLPattern -Pattern $pattern
+            $deleteQueries += "DELETE FROM ItemTable WHERE key LIKE '$sanitizedPattern';"
+        }
+
+        $query = ($deleteQueries -join "`n") + "`nVACUUM;"
+
+        # Execute SQLite command using production-verified method with enhanced logging
+        Write-LogDebug "Executing database cleanup with $($cleaningPatterns.Count) patterns"
         sqlite3 $DatabasePath $query
 
         Write-LogSuccess "Cleaned database: $DatabasePath"

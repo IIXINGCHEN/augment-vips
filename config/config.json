@@ -80,6 +80,23 @@
             ]
         }
     },
+    "modules": {
+        "windows": {
+            "path": "./scripts/windows/modules",
+            "required": [
+                "Logger",
+                "SystemDetection",
+                "VSCodeDiscovery",
+                "BackupManager",
+                "DatabaseCleaner",
+                "TelemetryModifier"
+            ]
+        },
+        "crossPlatform": {
+            "path": "./scripts/cross-platform",
+            "pythonPackage": "augment_vip"
+        }
+    },
     "features": {
         "autoCleanupBackups": true,
         "scatteredBackupCleanup": true,

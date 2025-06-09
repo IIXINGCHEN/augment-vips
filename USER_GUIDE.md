@@ -286,7 +286,7 @@ Get-ExecutionPolicy -Scope CurrentUser
 #### 查看备份统计
 ```powershell
 # 导入备份管理模块
-Import-Module .\scripts\modules\BackupManager.psm1 -Force
+Import-Module .\scripts\windows\modules\BackupManager.psm1 -Force
 
 # 显示备份统计信息
 Show-BackupStatistics
@@ -427,7 +427,7 @@ Test-Path .\scripts\modules\Logger.psm1
 Get-ExecutionPolicy
 
 # 解除模块文件阻止
-Unblock-File .\scripts\modules\*.psm1
+Unblock-File .\scripts\windows\modules\*.psm1
 
 # 手动导入测试
 Import-Module .\scripts\modules\Logger.psm1 -Force -Verbose
@@ -664,7 +664,7 @@ Complete-LogProgress -Id <int>
 
 **使用示例**：
 ```powershell
-Import-Module .\scripts\modules\Logger.psm1 -Force
+Import-Module .\scripts\windows\modules\Logger.psm1 -Force
 Initialize-Logger -LogFilePath "custom.log" -Level Info -EnableConsole $true -EnableFile $true
 Write-LogInfo "操作开始"
 Write-LogSuccess "操作完成"
@@ -740,7 +740,7 @@ Show-BackupStatistics                         # 显示备份统计
 
 **使用示例**：
 ```powershell
-Import-Module .\scripts\modules\BackupManager.psm1 -Force
+Import-Module .\scripts\windows\modules\BackupManager.psm1 -Force
 Initialize-BackupManager -BackupDirectory "C:\Backups" -MaxAge 30 -MaxCount 10
 
 # 创建备份
@@ -774,7 +774,7 @@ Optimize-Database -DatabasePath <string>           # 优化数据库
 
 **使用示例**：
 ```powershell
-Import-Module .\scripts\modules\DatabaseCleaner.psm1 -Force
+Import-Module .\scripts\windows\modules\DatabaseCleaner.psm1 -Force
 
 # 分析数据库
 $analysis = Get-DatabaseAnalysis -DatabasePath "C:\path\to\database.vscdb"
@@ -816,7 +816,7 @@ New-TelemetryIdPreview -IdTypes <string[]>                                   # �
 
 **使用示例**：
 ```powershell
-Import-Module .\scripts\modules\TelemetryModifier.psm1 -Force
+Import-Module .\scripts\windows\modules\TelemetryModifier.psm1 -Force
 
 # 预览当前ID
 $currentIds = Get-CurrentTelemetryIds -StorageJsonPath "C:\path\to\storage.json"
@@ -1183,7 +1183,7 @@ $failedModules = @()
 
 foreach ($module in $modules) {
     try {
-        Import-Module ".\scripts\modules\$module.psm1" -Force -ErrorAction Stop
+        Import-Module ".\scripts\windows\modules\$module.psm1" -Force -ErrorAction Stop
     } catch {
         $failedModules += $module
     }

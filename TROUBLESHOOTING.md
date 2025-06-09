@@ -107,7 +107,7 @@ Get-ExecutionPolicy
 Unblock-File .\scripts\modules\*.psm1
 
 # 4. 强制导入模块
-Import-Module .\scripts\modules\Logger.psm1 -Force -Verbose
+Import-Module .\scripts\windows\modules\Logger.psm1 -Force -Verbose
 
 # 5. 检查模块路径
 $env:PSModulePath -split ';'
@@ -116,7 +116,7 @@ $env:PSModulePath -split ';'
 $modules = @("Logger", "SystemDetection", "VSCodeDiscovery", "BackupManager", "DatabaseCleaner", "TelemetryModifier")
 foreach ($module in $modules) {
     try {
-        Import-Module ".\scripts\modules\$module.psm1" -Force
+        Import-Module ".\scripts\windows\modules\$module.psm1" -Force
         Write-Host "$module`: ✅ OK" -ForegroundColor Green
     } catch {
         Write-Host "$module`: ❌ ERROR - $($_.Exception.Message)" -ForegroundColor Red
@@ -211,7 +211,7 @@ Get-CimInstance -ClassName Win32_LogicalDisk | Where-Object {$_.DeviceID -eq "C:
     Select-Object DeviceID, @{Name="FreeSpaceGB";Expression={[Math]::Round($_.FreeSpace/1GB,2)}}
 
 # 清理旧备份
-Import-Module .\scripts\modules\BackupManager.psm1 -Force
+Import-Module .\scripts\windows\modules\BackupManager.psm1 -Force
 Clear-OldBackups -Force
 
 # 更改备份位置
