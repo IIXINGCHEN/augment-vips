@@ -1,4 +1,4 @@
-# 致谢与贡献 / Credits and Contributions
+# Augment VIP Cleaner - 致谢与贡献 / Credits and Contributions
 
 ## 🙏 原作者致谢 / Original Author Acknowledgment
 
@@ -135,4 +135,4 @@ This project follows the original project's **MIT License** terms, ensuring full
 
 ---
 
-© 2024 Augment VIP Project (Windows Enhancement). 基于原项目进行Windows系统优化开发。
+© 2024 Augment VIP Cleaner Project (Windows Enhancement). 基于原项目进行Windows系统优化开发。

@@ -1,4 +1,4 @@
-﻿# VS Code Cleanup Master - 完整使用文档
+﻿# Augment VIP Cleaner - 完整使用文档
 
 ## 🙏 致谢 / Acknowledgments
 
@@ -78,7 +78,7 @@ This project is based on [azrilaiman2003/augment-vip](https://github.com/azrilai
 
 ## 🎯 概述
 
-VS Code Cleanup Master 是一个专业的PowerShell工具套件，专门用于清理VS Code中的Augment相关数据和修改遥测标识符。该工具提供企业级的安全性、完整的备份恢复机制，并支持多种VS Code安装类型。
+Augment VIP Cleaner 是一个专业的PowerShell工具套件，专门用于清理VS Code中的Augment相关数据和修改遥测标识符。该工具提供企业级的安全性、完整的备份恢复机制，并支持多种VS Code安装类型。
 
 ### 核心功能
 - **数据库清理**：移除所有Augment和Context7相关条目
@@ -240,7 +240,7 @@ Get-ExecutionPolicy -Scope CurrentUser
 ### 命令行参数详解
 
 ```powershell
-.\scripts\vscode-cleanup-master.ps1 [参数]
+.\scripts\windows\vscode-cleanup-master.ps1 [参数]
 ```
 
 | 参数 | 类型 | 说明 | 示例 |

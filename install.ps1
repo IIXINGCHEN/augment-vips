@@ -279,7 +279,7 @@ function Invoke-AugmentVIP {
         [bool]$UseWindows
     )
 
-    Write-Info "Running Augment VIP operation: $Operation"
+    Write-Info "Running Augment VIP Cleaner operation: $Operation"
 
     Push-Location $script:InstallDir
 
@@ -350,7 +350,7 @@ function Main {
         Write-Info "Detailed output mode enabled"
     }
 
-    Write-Info "Augment VIP Remote Installer v1.0.0"
+    Write-Info "Augment VIP Cleaner Remote Installer v1.0.0"
     Write-Info "======================================"
     Write-Info "Repository: $script:RepoUrl"
     Write-Info "Install Directory: $script:InstallDir"

@@ -11,7 +11,7 @@
 ## 📋 中文免责声明
 
 ### 软件性质说明
-本软件（Augment VIP - Windows Enhancement）是一个用于清理VS Code数据库和修改遥测标识符的工具。该软件：
+本软件（Augment VIP Cleaner）是一个用于清理VS Code数据库和修改遥测标识符的工具。该软件：
 - 会修改VS Code的数据库文件
 - 会更改VS Code的配置文件
 - 会生成和替换遥测标识符
@@ -78,7 +78,7 @@
 ## 📋 English Disclaimer
 
 ### Software Nature
-This software (Augment VIP - Windows Enhancement) is a tool for cleaning VS Code databases and modifying telemetry identifiers. The software:
+This software (Augment VIP Cleaner) is a tool for cleaning VS Code databases and modifying telemetry identifiers. The software:
 - Modifies VS Code database files
 - Changes VS Code configuration files  
 - Generates and replaces telemetry identifiers

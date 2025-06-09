@@ -1,6 +1,6 @@
-#  VS Code Cleanup Master - 专业的VS Code清理工具
+# Augment VIP Cleaner - 专业的VS Code数据清理与隐私保护工具
 
-一个专为Windows/Linux系统开发的VS Code清理工具，用于清理VS Code数据和修改遥测标识符，具备完整的备份恢复功能。该工具支持多种VS Code安装类型，并提供企业级的安全性和可靠性。
+一个专为清理VS Code中Augment相关数据而设计的企业级工具，提供数据库清理、遥测标识符修改、完整备份恢复等功能。基于原项目augment-vip进行Windows系统优化，具备PowerShell模块化架构和企业级安全特性。
 
 ## 🙏 致谢
 
@@ -376,7 +376,7 @@ Test-SystemCompatibility -Verbose
 本软件按"原样"提供，不提供任何明示或暗示的保证。详细条款请参阅 [LICENSE](LICENSE) 文件。
 
 ### 致谢要求
-使用本项目时，请保留对原作者 azrilaiman2003 和增强版作者的适当致谢。
+使用本项目时，请保留对原作者 azrilaiman2003 和Augment VIP Cleaner项目  作者的适当致谢。
 
 ## 支持
 

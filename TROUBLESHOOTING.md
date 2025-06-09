@@ -1,4 +1,4 @@
-# VS Code Cleanup Master - 故障排除指南
+# Augment VIP Cleaner - 故障排除指南
 
 > 💡 **提示**: 基本使用方法请参考 [USER_GUIDE.md](USER_GUIDE.md) 中的快速参考章节。本文档专注于解决具体的技术问题。
 

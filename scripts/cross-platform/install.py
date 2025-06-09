@@ -193,7 +193,7 @@ def create_readme(package_path):
     """Create README.md file"""
     readme_content = '''# Augment VIP - Cross-Platform Edition
 
-A cross-platform utility toolkit for Augment VIP users, providing tools to manage and clean VS Code databases.
+A professional cross-platform toolkit for Augment VIP users, providing tools to manage and clean VS Code databases.
 
 ## Features
 

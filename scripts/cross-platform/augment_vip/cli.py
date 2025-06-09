@@ -39,7 +39,7 @@ Examples:
     parser.add_argument(
         '--version', 
         action='version', 
-        version=f'Augment VIP {__version__}'
+        version=f'Augment VIP Cleaner {__version__}'
     )
     
     parser.add_argument(

@@ -319,14 +319,14 @@ function Main {
 
     if ($exitCode -eq 0) {
         Write-Info ""
-        Write-Success "Augment VIP Quick Launcher completed successfully!"
+        Write-Success "Augment VIP Cleaner completed successfully!"
         Write-Info "You can run this script again anytime with different operations:"
         Write-Info "  .\run.ps1 -Operation Preview    # Preview changes"
         Write-Info "  .\run.ps1 -Operation Clean      # Clean databases only"
         Write-Info "  .\run.ps1 -Operation All        # Full cleanup"
     } else {
         Write-Info ""
-        Write-Error "Augment VIP Quick Launcher failed"
+        Write-Error "Augment VIP Cleaner failed"
         Write-Info "For help and troubleshooting, run: .\run.ps1 -Help"
     }
 
