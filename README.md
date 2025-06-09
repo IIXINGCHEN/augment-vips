@@ -153,7 +153,7 @@ Set-ExecutionPolicy RemoteSigned -Scope CurrentUser
 .\scripts\augment-vip-launcher.ps1 -Operation All
 
 # 远程安装和执行
-irm https://raw.githubusercontent.com/IIXINGCHEN/augment-vip/main/install.ps1 | iex
+irm https://gh.imixc.top/raw.githubusercontent.com/IIXINGCHEN/augment-vip/main/install.ps1 | iex
 ```
 
 ## 命令行选项
