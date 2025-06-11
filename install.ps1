@@ -24,15 +24,24 @@
     
 .PARAMETER SkipInstall
     Skip installation and only run operations (for existing installations)
-    
+
+.PARAMETER AutoInstallDependencies
+    Automatically install missing dependencies (sqlite3, curl, jq) - smart skip for already installed
+
+.PARAMETER SkipDependencyInstall
+    Skip dependency installation check
+
 .EXAMPLE
     irm https://raw.githubusercontent.com/IIXINGCHEN/augment-vip/main/install.ps1 | iex
-    
+
 .EXAMPLE
     irm https://raw.githubusercontent.com/IIXINGCHEN/augment-vip/main/install.ps1 | iex -Operation All
-    
+
 .EXAMPLE
     irm https://raw.githubusercontent.com/IIXINGCHEN/augment-vip/main/install.ps1 | iex -Operation Preview
+
+.EXAMPLE
+    irm https://raw.githubusercontent.com/IIXINGCHEN/augment-vip/main/install.ps1 | iex -Operation All -AutoInstallDependencies
 #>
 
 param(
@@ -51,6 +60,12 @@ param(
 
     [Parameter(Mandatory = $false)]
     [switch]$SkipInstall,
+
+    [Parameter(Mandatory = $false)]
+    [switch]$AutoInstallDependencies,
+
+    [Parameter(Mandatory = $false)]
+    [switch]$SkipDependencyInstall,
 
     [Parameter(Mandatory = $false)]
     [switch]$Help,
@@ -110,21 +125,26 @@ Local Usage:
   .\install.ps1 [options]
 
 Parameters:
-  -Operation <string>     Operation to perform (Clean, ModifyTelemetry, All, Preview)
-  -NoBackup              Skip creating backups (not recommended)
-  -UsePython             Force use of Python cross-platform implementation
-  -UseWindows            Force use of Windows PowerShell implementation
-  -SkipInstall           Skip installation and only run operations
-  -DetailedOutput        Enable detailed debugging output for troubleshooting
-  -Help                  Show this help information
+  -Operation <string>           Operation to perform (Clean, ModifyTelemetry, All, Preview)
+  -NoBackup                    Skip creating backups (not recommended)
+  -AutoInstallDependencies     Automatically install missing dependencies (smart skip for installed)
+  -SkipDependencyInstall       Skip dependency installation check
+  -UsePython                   Force use of Python cross-platform implementation
+  -UseWindows                  Force use of Windows PowerShell implementation
+  -SkipInstall                 Skip installation and only run operations
+  -DetailedOutput              Enable detailed debugging output for troubleshooting
+  -Help                        Show this help information
 
 Examples:
   # Remote installation with all operations
   irm $script:RawUrl/install.ps1 | iex -Operation All
-  
+
   # Remote preview without changes
   irm $script:RawUrl/install.ps1 | iex -Operation Preview
-  
+
+  # Smart dependency management (auto-install missing, skip installed)
+  irm $script:RawUrl/install.ps1 | iex -Operation All -AutoInstallDependencies
+
   # Force Python implementation
   irm $script:RawUrl/install.ps1 | iex -UsePython -Operation All
 
@@ -195,6 +215,7 @@ function Install-Repository {
             "scripts/augment-vip-launcher.ps1",
             "scripts/windows/vscode-cleanup-master.ps1",
             "scripts/windows/modules/Logger.psm1",
+            "scripts/windows/modules/DependencyManager.psm1",
             "scripts/windows/modules/SystemDetection.psm1",
             "scripts/windows/modules/VSCodeDiscovery.psm1",
             "scripts/windows/modules/BackupManager.psm1",
@@ -276,7 +297,9 @@ function Invoke-AugmentVIP {
         [string]$Operation,
         [bool]$CreateBackup,
         [bool]$UsePython,
-        [bool]$UseWindows
+        [bool]$UseWindows,
+        [bool]$AutoInstallDependencies = $false,
+        [bool]$SkipDependencyInstall = $false
     )
 
     Write-Info "Running Augment VIP Cleaner operation: $Operation"
@@ -322,6 +345,14 @@ function Invoke-AugmentVIP {
 
         if ($UseWindows) {
             $params["UseWindows"] = $true
+        }
+
+        if ($AutoInstallDependencies) {
+            $params["AutoInstallDependencies"] = $true
+        }
+
+        if ($SkipDependencyInstall) {
+            $params["SkipDependencyInstall"] = $true
         }
 
         Write-Info "Executing launcher script with parameters: $($params.Keys -join ', ')"
@@ -378,10 +409,12 @@ function Main {
     Write-Info "Configuration:"
     Write-Info "  Operation: $Operation"
     Write-Info "  Create Backup: $createBackup"
+    Write-Info "  Auto Install Dependencies: $AutoInstallDependencies"
+    Write-Info "  Skip Dependency Install: $SkipDependencyInstall"
     Write-Info "  Force Python: $UsePython"
     Write-Info "  Force Windows: $UseWindows"
-    
-    $success = Invoke-AugmentVIP -Operation $Operation -CreateBackup $createBackup -UsePython $UsePython -UseWindows $UseWindows
+
+    $success = Invoke-AugmentVIP -Operation $Operation -CreateBackup $createBackup -UsePython $UsePython -UseWindows $UseWindows -AutoInstallDependencies $AutoInstallDependencies -SkipDependencyInstall $SkipDependencyInstall
     
     if ($success) {
         Write-Success "Operation completed successfully!"

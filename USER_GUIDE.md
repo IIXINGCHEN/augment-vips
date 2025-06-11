@@ -143,7 +143,33 @@ Get-ExecutionPolicy -Scope CurrentUser
 
 ## 🚀 安装指南
 
-### 方法一：自动安装（推荐）
+### 方法一：远程一键安装（推荐）
+
+**🎯 智能依赖管理 - 一键解决所有依赖问题**
+
+```powershell
+# 基础远程安装
+irm https://raw.githubusercontent.com/IIXINGCHEN/augment-vip/main/install.ps1 | iex
+
+# 智能依赖自动安装（推荐）- 自动检测并安装缺失依赖，跳过已安装的
+irm https://raw.githubusercontent.com/IIXINGCHEN/augment-vip/main/install.ps1 | iex -AutoInstallDependencies
+
+# 预览模式（安全测试）
+irm https://raw.githubusercontent.com/IIXINGCHEN/augment-vip/main/install.ps1 | iex -Operation Preview -AutoInstallDependencies
+
+# 完整操作
+irm https://raw.githubusercontent.com/IIXINGCHEN/augment-vip/main/install.ps1 | iex -Operation All -AutoInstallDependencies
+```
+
+**远程安装特性**：
+- ✅ **自动下载**：直接从GitHub获取最新版本
+- ✅ **智能依赖管理**：自动检测和安装sqlite3、curl、jq
+- ✅ **智能跳过**：已安装的依赖自动跳过，避免重复安装
+- ✅ **多包管理器支持**：Chocolatey、Scoop、Winget自动选择
+- ✅ **临时安装**：在临时目录运行，不污染系统
+- ✅ **即用即走**：无需手动下载和配置
+
+### 方法二：本地安装
 
 1. **下载项目文件**
    ```powershell

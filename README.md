@@ -160,8 +160,11 @@ Set-ExecutionPolicy RemoteSigned -Scope CurrentUser
 # 使用跨平台启动器
 .\scripts\augment-vip-launcher.ps1 -Operation All
 
-# 远程安装和执行
-irm https://gh.imixc.top/raw.githubusercontent.com/IIXINGCHEN/augment-vip/main/install.ps1 | iex
+# 远程安装和执行（智能依赖管理）
+irm https://raw.githubusercontent.com/IIXINGCHEN/augment-vip/main/install.ps1 | iex
+
+# 带智能依赖自动安装（推荐）
+irm https://raw.githubusercontent.com/IIXINGCHEN/augment-vip/main/install.ps1 | iex -AutoInstallDependencies
 ```
 
 ## 命令行选项
