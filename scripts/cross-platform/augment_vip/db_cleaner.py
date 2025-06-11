@@ -10,9 +10,44 @@ import shutil
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 
-from .utils import info, success, error, warning, get_all_vscode_databases, backup_file, check_vscode_running
+# Add common directory to path for config loader
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', 'common'))
+
+from .utils import (
+    info, success, error, warning,
+    get_all_vscode_databases, backup_file,
+    check_vscode_running, validate_file_path, sanitize_error_message
+)
+
+try:
+    from config_loader import get_cleaning_patterns
+    from transaction_manager import (
+        begin_transaction, add_file_operation, commit_transaction,
+        rollback_transaction, with_transaction
+    )
+    TRANSACTION_SUPPORT = True
+except ImportError:
+    # Fallback if config loader or transaction manager is not available
+    def get_cleaning_patterns(pattern_type: str) -> List[str]:
+        """Fallback pattern provider"""
+        patterns = {
+            "augment": ['%augment%', '%Augment%', '%AUGMENT%', '%context7%', '%Context7%', '%CONTEXT7%'],
+            "telemetry": ['%telemetry%', '%machineId%', '%deviceId%', '%sqmId%'],
+            "extensions": ['%augment.%', '%context7.%'],
+            "custom": []
+        }
+        return patterns.get(pattern_type, [])
+
+    # Dummy transaction functions
+    def begin_transaction(): return "dummy"
+    def add_file_operation(*args, **kwargs): pass
+    def commit_transaction(): return True
+    def rollback_transaction(): return True
+    def with_transaction(func): return func
+    TRANSACTION_SUPPORT = False
 
 
+@with_transaction
 def clean_database_file(db_path: Path, create_backup: bool = True) -> bool:
     """
     Clean a single VS Code database file
@@ -35,8 +70,11 @@ def clean_database_file(db_path: Path, create_backup: bool = True) -> bool:
     if create_backup:
         try:
             backup_path = backup_file(db_path)
+            # Add to transaction for rollback capability
+            if TRANSACTION_SUPPORT:
+                add_file_operation("db_modify", str(db_path), str(backup_path))
         except Exception as e:
-            error(f"Failed to create backup: {e}")
+            error(f"Failed to create backup: {sanitize_error_message(str(e))}")
             return False
     
     # Connect to the database and clean it
@@ -44,8 +82,8 @@ def clean_database_file(db_path: Path, create_backup: bool = True) -> bool:
         conn = sqlite3.connect(str(db_path))
         cursor = conn.cursor()
         
-        # Get the count of records before deletion
-        cursor.execute("SELECT COUNT(*) FROM ItemTable WHERE key LIKE '%augment%'")
+        # Get the count of records before deletion using parameterized query
+        cursor.execute("SELECT COUNT(*) FROM ItemTable WHERE key LIKE ?", ('%augment%',))
         count_before = cursor.fetchone()[0]
         
         if count_before == 0:
@@ -53,8 +91,8 @@ def clean_database_file(db_path: Path, create_backup: bool = True) -> bool:
             conn.close()
             return True
         
-        # Delete records containing "augment" (case-insensitive)
-        patterns = ['%augment%', '%Augment%', '%AUGMENT%', '%context7%', '%Context7%', '%CONTEXT7%']
+        # Delete records using configuration-driven patterns
+        patterns = get_cleaning_patterns("augment")
         total_deleted = 0
         
         for pattern in patterns:
@@ -178,8 +216,8 @@ def preview_cleanup() -> bool:
             conn = sqlite3.connect(str(db_path))
             cursor = conn.cursor()
             
-            # Count entries that would be deleted
-            patterns = ['%augment%', '%Augment%', '%AUGMENT%', '%context7%', '%Context7%', '%CONTEXT7%']
+            # Count entries that would be deleted using configuration-driven patterns
+            patterns = get_cleaning_patterns("augment")
             entries_count = 0
             
             for pattern in patterns:

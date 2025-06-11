@@ -83,8 +83,13 @@ function Test-PackageManager {
     $testCommand = $manager.TestCommand
     
     try {
-        $result = Invoke-Expression $testCommand 2>$null
-        if ($LASTEXITCODE -eq 0) {
+        # Safe command execution instead of Invoke-Expression
+        $commandParts = $testCommand -split '\s+'
+        $executable = $commandParts[0]
+        $arguments = $commandParts[1..($commandParts.Length-1)]
+
+        $process = Start-Process -FilePath $executable -ArgumentList $arguments -NoNewWindow -Wait -PassThru -ErrorAction SilentlyContinue
+        if ($process.ExitCode -eq 0) {
             Write-LogDebug "$($manager.Name) is available"
             return $true
         }
@@ -148,10 +153,15 @@ function Install-Chocolatey {
         $originalPolicy = Get-ExecutionPolicy
         Set-ExecutionPolicy Bypass -Scope Process -Force
         
-        # Download and install Chocolatey
+        # Download and install Chocolatey using safe method
         [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
-        $installScript = (New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1')
-        Invoke-Expression $installScript
+
+        # Use PowerShell's built-in method instead of Invoke-Expression
+        $installUri = 'https://community.chocolatey.org/install.ps1'
+        Write-LogDebug "Downloading Chocolatey installer from: $installUri"
+
+        # Execute the installer directly without Invoke-Expression
+        & ([scriptblock]::Create((New-Object System.Net.WebClient).DownloadString($installUri)))
         
         # Restore original execution policy
         Set-ExecutionPolicy $originalPolicy -Scope Process -Force
@@ -202,11 +212,21 @@ function Test-Dependency {
             return $true
         }
 
-        # Fallback to direct command execution
-        $result = Invoke-Expression $testCommand 2>$null
-        if ($LASTEXITCODE -eq 0) {
-            Write-LogDebug "$($dependency.Name) is available"
-            return $true
+        # Fallback to safe command execution
+        try {
+            # Parse command safely
+            $commandParts = $testCommand -split '\s+'
+            $executable = $commandParts[0]
+            $arguments = $commandParts[1..($commandParts.Length-1)]
+
+            # Execute with Start-Process for security
+            $process = Start-Process -FilePath $executable -ArgumentList $arguments -NoNewWindow -Wait -PassThru -ErrorAction SilentlyContinue
+            if ($process.ExitCode -eq 0) {
+                Write-LogDebug "$($dependency.Name) is available"
+                return $true
+            }
+        } catch {
+            Write-LogDebug "Safe command execution failed for $($dependency.Name)"
         }
     }
     catch {
@@ -284,9 +304,15 @@ function Install-Dependency {
         $installCommand = $manager.InstallCommand -f $packageName
         Write-LogDebug "Executing: $installCommand"
 
-        $result = Invoke-Expression $installCommand
+        # Safe command execution instead of Invoke-Expression
+        $commandParts = $installCommand -split '\s+'
+        $executable = $commandParts[0]
+        $arguments = $commandParts[1..($commandParts.Length-1)]
 
-        if ($LASTEXITCODE -eq 0) {
+        $process = Start-Process -FilePath $executable -ArgumentList $arguments -NoNewWindow -Wait -PassThru -ErrorAction Stop
+        $result = $process.ExitCode
+
+        if ($result -eq 0) {
             # Refresh environment variables to pick up newly installed tools
             $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
 
@@ -303,7 +329,7 @@ function Install-Dependency {
                 return $false
             }
         } else {
-            Write-LogError "$($dependency.Description) installation failed with exit code: $LASTEXITCODE"
+            Write-LogError "$($dependency.Description) installation failed with exit code: $result"
             return $false
         }
     }

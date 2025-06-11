@@ -10,18 +10,38 @@
 Import-Module (Join-Path $PSScriptRoot "Logger.psm1") -Force
 Import-Module (Join-Path $PSScriptRoot "BackupManager.psm1") -Force
 Import-Module (Join-Path $PSScriptRoot "CommonUtils.psm1") -Force
+Import-Module (Join-Path $PSScriptRoot "UnifiedServices.psm1") -Force
 
-# Cleaning patterns for different data types
-$script:AugmentPatterns = @(
-    '%augment%',
-    '%Augment%',
-    '%AUGMENT%',
-    '%augment-code%',
-    '%augmentcode%',
-    '%context7%',
-    '%Context7%',
-    '%CONTEXT7%'
-)
+# Load cleaning patterns from unified configuration service
+function Get-CleaningPatterns {
+    param([string]$PatternType = "augment")
+
+    try {
+        # Try unified service first
+        $patterns = Get-UnifiedCleaningPatterns -PatternType $PatternType
+        if ($patterns -and $patterns.Count -gt 0) {
+            return $patterns
+        }
+
+        # Fallback to local config
+        $config = Get-Configuration
+        if ($config -and $config.cleaning -and $config.cleaning.patterns) {
+            return $config.cleaning.patterns.$PatternType
+        }
+    } catch {
+        Write-LogWarning "Failed to load patterns from unified service and config, using fallback"
+    }
+
+    # Final fallback patterns
+    $fallbackPatterns = @{
+        "augment" = @('%augment%', '%Augment%', '%AUGMENT%', '%context7%', '%Context7%', '%CONTEXT7%')
+        "telemetry" = @('%telemetry%', '%machineId%', '%deviceId%', '%sqmId%')
+        "extensions" = @('%augment.%', '%context7.%', '%augment-vip%')
+        "custom" = @()
+    }
+
+    return $fallbackPatterns[$PatternType]
+}
 
 <#
 .SYNOPSIS
@@ -126,30 +146,7 @@ function Test-SafeSQLPattern {
     return $true
 }
 
-$script:TelemetryPatterns = @(
-    '%telemetry%',
-    '%machineId%',
-    '%deviceId%',
-    '%sqmId%',
-    '%uuid%',
-    '%session%',
-    '%lastSessionDate%',
-    '%lastSyncDate%',
-    '%lastSyncMachineId%',
-    '%lastSyncDeviceId%',
-    '%lastSyncSqmId%',
-    '%lastSyncUuid%',
-    '%lastSyncSession%',
-    '%lastSyncLastSessionDate%',
-    '%lastSyncLastSyncDate%'
-)
-
-$script:ExtensionPatterns = @(
-    '%augment.%',
-    '%context7.%',
-    '%augment-vip%',
-    '%augment_vip%'
-)
+# Removed hardcoded patterns - now using Get-CleaningPatterns function
 
 # Database cleaning result class
 class CleaningResult {
@@ -627,14 +624,17 @@ function Clear-DatabaseProductionMethod {
         }
 
         # Use production-verified SQL queries with enhanced security
-        # Load patterns from configuration or use defaults
-        $cleaningPatterns = @(
-            '%augment%', '%telemetry%', '%machineId%', '%deviceId%', '%sqmId%',
-            '%uuid%', '%session%', '%lastSessionDate%', '%lastSyncDate%',
-            '%lastSyncMachineId%', '%lastSyncDeviceId%', '%lastSyncSqmId%',
-            '%lastSyncUuid%', '%lastSyncSession%', '%lastSyncLastSessionDate%',
-            '%lastSyncLastSyncDate%'
-        )
+        # Load patterns from unified configuration
+        $augmentPatterns = Get-CleaningPatterns -PatternType "augment"
+        $telemetryPatterns = Get-CleaningPatterns -PatternType "telemetry"
+        $extensionPatterns = Get-CleaningPatterns -PatternType "extensions"
+        $customPatterns = Get-CleaningPatterns -PatternType "custom"
+
+        $cleaningPatterns = @()
+        $cleaningPatterns += $augmentPatterns
+        $cleaningPatterns += $telemetryPatterns
+        $cleaningPatterns += $extensionPatterns
+        $cleaningPatterns += $customPatterns
 
         # Build secure SQL query using parameterized approach
         $deleteQueries = @()

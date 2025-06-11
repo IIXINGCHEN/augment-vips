@@ -10,6 +10,7 @@
 Import-Module (Join-Path $PSScriptRoot "Logger.psm1") -Force
 Import-Module (Join-Path $PSScriptRoot "BackupManager.psm1") -Force
 Import-Module (Join-Path $PSScriptRoot "CommonUtils.psm1") -Force
+Import-Module (Join-Path $PSScriptRoot "UnifiedServices.psm1") -Force
 
 # Telemetry modification result class
 class TelemetryModificationResult {
@@ -104,8 +105,8 @@ function Set-VSCodeTelemetryIds {
                     $result.OldIds[$idType] = $storageData.$idType
                 }
                 
-                # Generate new ID
-                $newId = New-TelemetryId -Type $idConfig.Type -Length $idConfig.Length
+                # Generate new ID using unified service
+                $newId = New-UnifiedSecureId -IdType $idType -Length $idConfig.Length
                 $result.NewIds[$idType] = $newId
                 
                 # Update storage data
@@ -370,7 +371,7 @@ function New-TelemetryIdPreview {
     foreach ($idType in $idsToGenerate) {
         if ($script:TelemetryIdTypes.ContainsKey($idType)) {
             $idConfig = $script:TelemetryIdTypes[$idType]
-            $newId = New-TelemetryId -Type $idConfig.Type -Length $idConfig.Length
+            $newId = New-UnifiedSecureId -IdType $idType -Length $idConfig.Length
             $previewIds[$idType] = $newId
         }
     }
@@ -418,10 +419,10 @@ function Set-TelemetryIdsProductionMethod {
         # Read current configuration
         $content = Get-Content -Path $StoragePath -Raw | ConvertFrom-Json
 
-        # Generate new IDs using secure cryptographic methods
-        $newMachineId = New-SecureHexString -Length 64
-        $newDeviceId = New-SecureUUID
-        $newSqmId = New-SecureUUID
+        # Generate new IDs using unified secure ID service
+        $newMachineId = New-UnifiedSecureId -IdType "machineId"
+        $newDeviceId = New-UnifiedSecureId -IdType "deviceId"
+        $newSqmId = New-UnifiedSecureId -IdType "sqmId"
 
         # Update IDs (Windows format)
         $content."telemetry.machineId" = $newMachineId

@@ -54,15 +54,42 @@
         ]
     },
     "cleaning": {
-        "augmentPatterns": [
-            "%augment%",
-            "%Augment%",
-            "%AUGMENT%",
-            "%context7%",
-            "%Context7%",
-            "%CONTEXT7%"
-        ],
-        "customPatterns": [],
+        "patterns": {
+            "augment": [
+                "%augment%",
+                "%Augment%",
+                "%AUGMENT%",
+                "%augment-code%",
+                "%augmentcode%",
+                "%context7%",
+                "%Context7%",
+                "%CONTEXT7%"
+            ],
+            "telemetry": [
+                "%telemetry%",
+                "%machineId%",
+                "%deviceId%",
+                "%sqmId%",
+                "%uuid%",
+                "%session%",
+                "%lastSessionDate%",
+                "%lastSyncDate%",
+                "%lastSyncMachineId%",
+                "%lastSyncDeviceId%",
+                "%lastSyncSqmId%",
+                "%lastSyncUuid%",
+                "%lastSyncSession%",
+                "%lastSyncLastSessionDate%",
+                "%lastSyncLastSyncDate%"
+            ],
+            "extensions": [
+                "%augment.%",
+                "%context7.%",
+                "%augment-vip%",
+                "%augment_vip%"
+            ],
+            "custom": []
+        },
         "enableDatabaseCleaning": true,
         "enableTelemetryModification": true,
         "checkVSCodeRunning": true

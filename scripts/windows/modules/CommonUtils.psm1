@@ -268,6 +268,100 @@ function New-SecureFileName {
     }
 }
 
+<#
+.SYNOPSIS
+    Validates file path to prevent directory traversal attacks
+.PARAMETER Path
+    File path to validate
+.OUTPUTS
+    bool - True if path is safe, False otherwise
+#>
+function Test-SafePath {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path
+    )
+
+    try {
+        # Check for null or empty path
+        if ([string]::IsNullOrWhiteSpace($Path)) {
+            Write-LogWarning "Empty or null path provided"
+            return $false
+        }
+
+        # Check for dangerous patterns
+        $dangerousPatterns = @(
+            '\.\.[\\/]',     # Parent directory traversal
+            '^[\\/]',        # Absolute paths starting with / or \
+            '[<>:"|?*]',     # Invalid filename characters
+            '^\s*$',         # Empty or whitespace-only
+            '\x00'           # Null bytes
+        )
+
+        foreach ($pattern in $dangerousPatterns) {
+            if ($Path -match $pattern) {
+                Write-LogWarning "Dangerous pattern detected in path: $Path"
+                return $false
+            }
+        }
+
+        # Resolve and validate the path
+        try {
+            $resolvedPath = Resolve-Path $Path -ErrorAction SilentlyContinue
+            if ($resolvedPath) {
+                # Check if resolved path is within allowed boundaries
+                $currentDir = Get-Location
+                $relativePath = [System.IO.Path]::GetRelativePath($currentDir, $resolvedPath)
+
+                if ($relativePath.StartsWith('..')) {
+                    Write-LogWarning "Path resolves outside current directory: $Path"
+                    return $false
+                }
+            }
+        } catch {
+            # Path doesn't exist yet, which is okay for new files
+            Write-LogDebug "Path validation: $Path (new file)"
+        }
+
+        return $true
+    }
+    catch {
+        Write-LogError "Path validation failed for: $Path" -Exception $_.Exception
+        return $false
+    }
+}
+
+<#
+.SYNOPSIS
+    Safely executes a command without using Invoke-Expression
+.PARAMETER Command
+    Command to execute
+.PARAMETER Arguments
+    Command arguments
+.OUTPUTS
+    Process exit code
+#>
+function Invoke-SafeCommand {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Command,
+        [string[]]$Arguments = @()
+    )
+
+    try {
+        Write-LogDebug "Executing safe command: $Command with arguments: $($Arguments -join ' ')"
+
+        $process = Start-Process -FilePath $Command -ArgumentList $Arguments -NoNewWindow -Wait -PassThru -ErrorAction Stop
+        return $process.ExitCode
+    }
+    catch {
+        Write-LogError "Safe command execution failed: $Command" -Exception $_.Exception
+        return -1
+    }
+}
+
 # Export module functions
 Export-ModuleMember -Function @(
     'New-SecureUUID',
@@ -275,5 +369,7 @@ Export-ModuleMember -Function @(
     'Get-VSCodePaths',
     'Get-Configuration',
     'Invoke-SafeOperation',
-    'New-SecureFileName'
+    'New-SecureFileName',
+    'Test-SafePath',
+    'Invoke-SafeCommand'
 )

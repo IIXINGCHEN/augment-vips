@@ -1,0 +1,325 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Augment VIP Cleaner Configuration Schema",
+  "description": "JSON schema for validating Augment VIP Cleaner configuration files",
+  "type": "object",
+  "required": [
+    "version",
+    "environment",
+    "cleaning",
+    "security"
+  ],
+  "properties": {
+    "version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$",
+      "description": "Configuration version in semver format"
+    },
+    "environment": {
+      "type": "string",
+      "enum": ["development", "production", "testing"],
+      "description": "Environment configuration"
+    },
+    "platform": {
+      "type": "object",
+      "properties": {
+        "autoDetect": {
+          "type": "boolean",
+          "description": "Automatically detect platform"
+        },
+        "preferredImplementation": {
+          "type": "string",
+          "enum": ["auto", "powershell", "python"],
+          "description": "Preferred implementation to use"
+        },
+        "windows": {
+          "type": "object",
+          "properties": {
+            "useNativeImplementation": {"type": "boolean"},
+            "fallbackToPython": {"type": "boolean"}
+          }
+        },
+        "linux": {
+          "type": "object",
+          "properties": {
+            "usePythonImplementation": {"type": "boolean"},
+            "vscodePaths": {
+              "type": "array",
+              "items": {"type": "string"}
+            }
+          }
+        },
+        "macos": {
+          "type": "object",
+          "properties": {
+            "usePythonImplementation": {"type": "boolean"},
+            "vscodePaths": {
+              "type": "array",
+              "items": {"type": "string"}
+            }
+          }
+        }
+      }
+    },
+    "backup": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Enable backup functionality"
+        },
+        "retentionDays": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 365,
+          "description": "Number of days to retain backups"
+        },
+        "maxBackupCount": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100,
+          "description": "Maximum number of backups to keep"
+        },
+        "directory": {
+          "type": "string",
+          "description": "Backup directory path"
+        }
+      },
+      "required": ["enabled"]
+    },
+    "logging": {
+      "type": "object",
+      "properties": {
+        "level": {
+          "type": "string",
+          "enum": ["Debug", "Info", "Warning", "Error"],
+          "description": "Logging level"
+        },
+        "enableConsole": {
+          "type": "boolean",
+          "description": "Enable console logging"
+        },
+        "enableFile": {
+          "type": "boolean",
+          "description": "Enable file logging"
+        },
+        "directory": {
+          "type": "string",
+          "description": "Log directory path"
+        },
+        "enableSensitiveFiltering": {
+          "type": "boolean",
+          "description": "Filter sensitive information from logs"
+        },
+        "maxLogFileSize": {
+          "type": "string",
+          "pattern": "^\\d+[KMGT]?B$",
+          "description": "Maximum log file size"
+        },
+        "maxLogFiles": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100,
+          "description": "Maximum number of log files"
+        }
+      },
+      "required": ["level", "enableConsole", "enableFile"]
+    },
+    "security": {
+      "type": "object",
+      "properties": {
+        "requireAdminPrivileges": {
+          "type": "boolean",
+          "description": "Require administrator privileges"
+        },
+        "allowContinueWithoutAdmin": {
+          "type": "boolean",
+          "description": "Allow operation without admin privileges"
+        },
+        "enableSQLInjectionProtection": {
+          "type": "boolean",
+          "description": "Enable SQL injection protection"
+        },
+        "enableSecureFileHandling": {
+          "type": "boolean",
+          "description": "Enable secure file handling"
+        },
+        "backupFilePermissions": {
+          "type": "string",
+          "enum": ["OwnerOnly", "OwnerGroup", "Everyone"],
+          "description": "Backup file permissions"
+        },
+        "secureDeletePasses": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10,
+          "description": "Number of secure delete passes"
+        },
+        "enableDependencyVerification": {
+          "type": "boolean",
+          "description": "Enable dependency verification"
+        },
+        "trustedPackageManagers": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["chocolatey", "scoop", "winget", "apt", "yum", "brew"]
+          },
+          "description": "Trusted package managers"
+        }
+      },
+      "required": [
+        "enableSQLInjectionProtection",
+        "enableSecureFileHandling"
+      ]
+    },
+    "cleaning": {
+      "type": "object",
+      "properties": {
+        "patterns": {
+          "type": "object",
+          "properties": {
+            "augment": {
+              "type": "array",
+              "items": {"type": "string"},
+              "minItems": 1,
+              "description": "Augment-related cleaning patterns"
+            },
+            "telemetry": {
+              "type": "array",
+              "items": {"type": "string"},
+              "description": "Telemetry-related cleaning patterns"
+            },
+            "extensions": {
+              "type": "array",
+              "items": {"type": "string"},
+              "description": "Extension-related cleaning patterns"
+            },
+            "custom": {
+              "type": "array",
+              "items": {"type": "string"},
+              "description": "Custom cleaning patterns"
+            }
+          },
+          "required": ["augment", "telemetry", "extensions", "custom"]
+        },
+        "enableDatabaseCleaning": {
+          "type": "boolean",
+          "description": "Enable database cleaning"
+        },
+        "enableTelemetryModification": {
+          "type": "boolean",
+          "description": "Enable telemetry modification"
+        },
+        "checkVSCodeRunning": {
+          "type": "boolean",
+          "description": "Check if VS Code is running before operations"
+        }
+      },
+      "required": ["patterns"]
+    },
+    "telemetry": {
+      "type": "object",
+      "properties": {
+        "modifyIds": {
+          "type": "boolean",
+          "description": "Modify telemetry IDs"
+        },
+        "idTypes": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "telemetry.machineId",
+              "telemetry.devDeviceId",
+              "telemetry.sqmId",
+              "telemetry.sessionId",
+              "telemetry.instanceId",
+              "telemetry.firstSessionDate",
+              "telemetry.lastSessionDate"
+            ]
+          },
+          "description": "Types of telemetry IDs to modify"
+        }
+      }
+    },
+    "discovery": {
+      "type": "object",
+      "properties": {
+        "includePortable": {
+          "type": "boolean",
+          "description": "Include portable VS Code installations"
+        },
+        "searchPaths": {
+          "type": "array",
+          "items": {"type": "string"},
+          "description": "Additional search paths for VS Code"
+        },
+        "enableProductionMethod": {
+          "type": "boolean",
+          "description": "Enable production discovery method"
+        },
+        "crossPlatformPaths": {
+          "type": "object",
+          "properties": {
+            "windows": {
+              "type": "array",
+              "items": {"type": "string"}
+            },
+            "linux": {
+              "type": "array",
+              "items": {"type": "string"}
+            },
+            "macos": {
+              "type": "array",
+              "items": {"type": "string"}
+            }
+          }
+        }
+      }
+    },
+    "modules": {
+      "type": "object",
+      "properties": {
+        "windows": {
+          "type": "object",
+          "properties": {
+            "path": {"type": "string"},
+            "required": {
+              "type": "array",
+              "items": {"type": "string"}
+            }
+          }
+        },
+        "crossPlatform": {
+          "type": "object",
+          "properties": {
+            "path": {"type": "string"},
+            "pythonPackage": {"type": "string"}
+          }
+        }
+      }
+    },
+    "features": {
+      "type": "object",
+      "properties": {
+        "autoCleanupBackups": {
+          "type": "boolean",
+          "description": "Automatically cleanup old backups"
+        },
+        "scatteredBackupCleanup": {
+          "type": "boolean",
+          "description": "Cleanup scattered backup files"
+        },
+        "backupIntegrityCheck": {
+          "type": "boolean",
+          "description": "Perform backup integrity checks"
+        },
+        "crossPlatformSupport": {
+          "type": "boolean",
+          "description": "Enable cross-platform support"
+        }
+      }
+    }
+  }
+}

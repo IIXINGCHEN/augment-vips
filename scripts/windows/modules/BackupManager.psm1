@@ -8,6 +8,7 @@
 
 # Import Logger module
 Import-Module (Join-Path $PSScriptRoot "Logger.psm1") -Force
+Import-Module (Join-Path $PSScriptRoot "CommonUtils.psm1") -Force
 
 # Import CommonUtils module
 Import-Module (Join-Path $PSScriptRoot "CommonUtils.psm1") -Force
@@ -95,6 +96,12 @@ function New-FileBackup {
         throw "Backup manager not initialized. Call Initialize-BackupManager first."
     }
     
+    # Validate path security
+    if (-not (Test-SafePath -Path $FilePath)) {
+        Write-LogError "Invalid or unsafe file path: $FilePath"
+        return $null
+    }
+
     if (-not (Test-Path $FilePath)) {
         Write-LogError "Source file not found: $FilePath"
         return $null

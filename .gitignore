@@ -1,0 +1,102 @@
+# Logs
+logs/
+*.log
+*.log.*
+
+# Temporary files
+*.tmp
+*.temp
+*_temp.*
+*_tmp.*
+
+# Backup files
+*.bak
+*.backup
+data/backups/
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Windows
+desktop.ini
+
+# IDE files
+.vscode/settings.json
+.vscode/launch.json
+.vscode/tasks.json
+.idea/
+*.swp
+*.swo
+*~
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PowerShell
+*.ps1xml
+
+# Audit and task files
+*_audit_*.md
+*_task_*.md
+audit_report*.md
+task_*.md
+
+# Test results
+test_results/
+coverage/
+.coverage
+.pytest_cache/
+.tox/
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Package managers
+node_modules/
+package-lock.json
+yarn.lock
+
+# Compiled binaries
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Archives
+*.zip
+*.tar.gz
+*.rar
+*.7z
+
+# Local configuration overrides
+config/local.json
+config/dev.json
+config/test.json
