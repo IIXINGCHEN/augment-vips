@@ -90,6 +90,35 @@ Invoke-DependencyManagement -AutoInstall
 - ✅ **多包管理器**：Chocolatey、Scoop、Winget 支持
 - ✅ **自动回退**：无包管理器时自动安装 Chocolatey
 
+### 手动安装Chocolatey（备选方案）
+
+如果智能依赖管理失败，可以手动安装Chocolatey包管理器：
+
+**步骤1：安装Chocolatey包管理器**
+```powershell
+# 以管理员身份运行PowerShell，然后执行：
+Set-ExecutionPolicy Bypass -Scope Process -Force
+[System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
+iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
+```
+
+**步骤2：使用Chocolatey安装依赖**
+```powershell
+# 安装所有必需依赖
+choco install sqlite curl jq -y
+
+# 验证安装
+sqlite3 --version
+curl --version
+jq --version
+```
+
+**步骤3：重新运行项目**
+```powershell
+# 现在可以正常使用项目了
+.\scripts\augment-vip-launcher.ps1 -Operation Preview
+```
+
 ### 传统依赖问题诊断
 ```powershell
 # 检查所有依赖项状态

@@ -298,6 +298,17 @@ winget install sqlite
 - ✅ **包管理器支持**：优先使用 Chocolatey，备选 Scoop 和 Winget
 - ✅ **自动回退**：如果没有包管理器，会自动安装 Chocolatey
 
+**备选方案**：如果自动安装失败，可手动安装Chocolatey：
+```powershell
+# 以管理员身份运行
+Set-ExecutionPolicy Bypass -Scope Process -Force
+[System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
+iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
+
+# 然后安装依赖
+choco install sqlite curl jq -y
+```
+
 **"执行策略阻止脚本执行"**
 ```powershell
 # 推荐方案：为当前用户设置执行策略（永久）
