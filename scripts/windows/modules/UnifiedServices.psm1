@@ -304,18 +304,141 @@ function New-FallbackSecureId {
         [string]$IdType,
         [int]$Length = 64
     )
-    
-    # Use existing CommonUtils functions as fallback
+
+    # Internal secure ID generation to avoid module dependency issues
     switch ($IdType.ToLower()) {
-        'machineid' { return New-SecureHexString -Length 64 }
-        'deviceid' { return New-SecureUUID }
-        'sqmid' { return New-SecureUUID }
-        'sessionid' { return New-SecureUUID }
-        'instanceid' { return New-SecureUUID }
-        'uuid' { return New-SecureUUID }
-        'hex' { return New-SecureHexString -Length $Length }
-        'timestamp' { return Get-Date -Format "yyyy-MM-ddTHH:mm:ss.fffZ" }
-        default { return New-SecureUUID }
+        'machineid' {
+            # Generate 64-character hex string for machine ID
+            try {
+                $byteCount = [Math]::Ceiling(64 / 2)
+                $bytes = New-Object byte[] $byteCount
+                $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+                $rng.GetBytes($bytes)
+                $rng.Dispose()
+                $hexString = [System.BitConverter]::ToString($bytes).Replace("-", "").ToLower()
+                return $hexString.Substring(0, [Math]::Min($hexString.Length, 64))
+            } catch {
+                Write-LogWarning "Failed to generate secure machine ID, using fallback"
+                return [System.Guid]::NewGuid().ToString().Replace("-", "").Substring(0, 64)
+            }
+        }
+        'deviceid' {
+            # Generate UUID for device ID
+            try {
+                $bytes = New-Object byte[] 16
+                $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+                $rng.GetBytes($bytes)
+                $rng.Dispose()
+                # Set version (4) and variant bits according to RFC 4122
+                $bytes[6] = ($bytes[6] -band 0x0F) -bor 0x40  # Version 4
+                $bytes[8] = ($bytes[8] -band 0x3F) -bor 0x80  # Variant 10
+                return [System.Guid]::new($bytes).ToString()
+            } catch {
+                Write-LogWarning "Failed to generate secure device ID, using fallback"
+                return [System.Guid]::NewGuid().ToString()
+            }
+        }
+        'sqmid' {
+            # Generate UUID for SQM ID
+            try {
+                $bytes = New-Object byte[] 16
+                $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+                $rng.GetBytes($bytes)
+                $rng.Dispose()
+                # Set version (4) and variant bits according to RFC 4122
+                $bytes[6] = ($bytes[6] -band 0x0F) -bor 0x40  # Version 4
+                $bytes[8] = ($bytes[8] -band 0x3F) -bor 0x80  # Variant 10
+                return [System.Guid]::new($bytes).ToString()
+            } catch {
+                Write-LogWarning "Failed to generate secure SQM ID, using fallback"
+                return [System.Guid]::NewGuid().ToString()
+            }
+        }
+        'sessionid' {
+            # Generate UUID for session ID
+            try {
+                $bytes = New-Object byte[] 16
+                $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+                $rng.GetBytes($bytes)
+                $rng.Dispose()
+                # Set version (4) and variant bits according to RFC 4122
+                $bytes[6] = ($bytes[6] -band 0x0F) -bor 0x40  # Version 4
+                $bytes[8] = ($bytes[8] -band 0x3F) -bor 0x80  # Variant 10
+                return [System.Guid]::new($bytes).ToString()
+            } catch {
+                Write-LogWarning "Failed to generate secure session ID, using fallback"
+                return [System.Guid]::NewGuid().ToString()
+            }
+        }
+        'instanceid' {
+            # Generate UUID for instance ID
+            try {
+                $bytes = New-Object byte[] 16
+                $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+                $rng.GetBytes($bytes)
+                $rng.Dispose()
+                # Set version (4) and variant bits according to RFC 4122
+                $bytes[6] = ($bytes[6] -band 0x0F) -bor 0x40  # Version 4
+                $bytes[8] = ($bytes[8] -band 0x3F) -bor 0x80  # Variant 10
+                return [System.Guid]::new($bytes).ToString()
+            } catch {
+                Write-LogWarning "Failed to generate secure instance ID, using fallback"
+                return [System.Guid]::NewGuid().ToString()
+            }
+        }
+        'uuid' {
+            # Generate generic UUID
+            try {
+                $bytes = New-Object byte[] 16
+                $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+                $rng.GetBytes($bytes)
+                $rng.Dispose()
+                # Set version (4) and variant bits according to RFC 4122
+                $bytes[6] = ($bytes[6] -band 0x0F) -bor 0x40  # Version 4
+                $bytes[8] = ($bytes[8] -band 0x3F) -bor 0x80  # Variant 10
+                return [System.Guid]::new($bytes).ToString()
+            } catch {
+                Write-LogWarning "Failed to generate secure UUID, using fallback"
+                return [System.Guid]::NewGuid().ToString()
+            }
+        }
+        'hex' {
+            # Generate hex string of specified length
+            try {
+                if ($Length -le 0) {
+                    throw "Length must be greater than 0"
+                }
+                $byteCount = [Math]::Ceiling($Length / 2)
+                $bytes = New-Object byte[] $byteCount
+                $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+                $rng.GetBytes($bytes)
+                $rng.Dispose()
+                $hexString = [System.BitConverter]::ToString($bytes).Replace("-", "").ToLower()
+                return $hexString.Substring(0, [Math]::Min($hexString.Length, $Length))
+            } catch {
+                Write-LogWarning "Failed to generate secure hex string, using fallback"
+                return [System.Guid]::NewGuid().ToString().Replace("-", "").Substring(0, [Math]::Min(32, $Length))
+            }
+        }
+        'timestamp' {
+            return Get-Date -Format "yyyy-MM-ddTHH:mm:ss.fffZ"
+        }
+        default {
+            # Default to UUID generation
+            try {
+                $bytes = New-Object byte[] 16
+                $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+                $rng.GetBytes($bytes)
+                $rng.Dispose()
+                # Set version (4) and variant bits according to RFC 4122
+                $bytes[6] = ($bytes[6] -band 0x0F) -bor 0x40  # Version 4
+                $bytes[8] = ($bytes[8] -band 0x3F) -bor 0x80  # Variant 10
+                return [System.Guid]::new($bytes).ToString()
+            } catch {
+                Write-LogWarning "Failed to generate secure default ID, using fallback"
+                return [System.Guid]::NewGuid().ToString()
+            }
+        }
     }
 }
 

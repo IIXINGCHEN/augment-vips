@@ -121,7 +121,20 @@ function New-FileBackup {
         # Ensure unique filename with secure random suffix
         $counter = 1
         while (Test-Path $backupPath) {
-            $additionalRandom = New-SecureHexString -Length 8
+            # Generate 8-character hex string inline to avoid module dependency issues
+            try {
+                $byteCount = [Math]::Ceiling(8 / 2)
+                $bytes = New-Object byte[] $byteCount
+                $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+                $rng.GetBytes($bytes)
+                $rng.Dispose()
+                $hexString = [System.BitConverter]::ToString($bytes).Replace("-", "").ToLower()
+                $additionalRandom = $hexString.Substring(0, [Math]::Min($hexString.Length, 8))
+            } catch {
+                # Fallback to GUID-based random string
+                $additionalRandom = [System.Guid]::NewGuid().ToString().Replace("-", "").Substring(0, 8)
+            }
+
             $backupFileName = "${secureFileName}_${additionalRandom}_${fileName}"
             $backupPath = Join-Path $targetBackupDir $backupFileName
             $counter++
