@@ -79,7 +79,10 @@ param(
     [switch]$Help,
 
     [Parameter(Mandatory = $false)]
-    [switch]$DetailedOutput
+    [switch]$DetailedOutput,
+
+    [Parameter(Mandatory = $false)]
+    [switch]$Interactive
 )
 
 # Global variables
@@ -109,6 +112,7 @@ function Get-EnvironmentParameters {
         'AUGMENT_USE_WINDOWS' = 'UseWindows'
         'AUGMENT_SKIP_INSTALL' = 'SkipInstall'
         'AUGMENT_DETAILED_OUTPUT' = 'DetailedOutput'
+        'AUGMENT_INTERACTIVE' = 'Interactive'
     }
 
     foreach ($envVar in $envMapping.Keys) {
@@ -199,6 +203,7 @@ Parameters:
   -UseWindows                  Force use of Windows PowerShell implementation
   -SkipInstall                 Skip installation and only run operations
   -DetailedOutput              Enable detailed debugging output for troubleshooting
+  -Interactive                 Show interactive menu after completion (auto-detected for remote execution)
   -Help                        Show this help information
 
 Environment Variables (for remote execution):
@@ -210,6 +215,7 @@ Environment Variables (for remote execution):
   AUGMENT_USE_WINDOWS          Same as -UseWindows (true/false, 1/0, yes/no, on/off)
   AUGMENT_SKIP_INSTALL         Same as -SkipInstall (true/false, 1/0, yes/no, on/off)
   AUGMENT_DETAILED_OUTPUT      Same as -DetailedOutput (true/false, 1/0, yes/no, on/off)
+  AUGMENT_INTERACTIVE          Same as -Interactive (true/false, 1/0, yes/no, on/off)
 
 Examples:
   # Remote installation with all operations
@@ -262,17 +268,163 @@ function Test-PythonAvailable {
         if ($pythonVersion -match "Python 3\.") {
             return $true
         }
-        
+
         $python3Version = python3 --version 2>&1
         if ($python3Version -match "Python 3\.") {
             return $true
         }
-        
+
         return $false
     }
     catch {
         return $false
     }
+}
+
+function Test-InteractiveSession {
+    <#
+    .SYNOPSIS
+        Detects if the current session supports interactive input
+    .DESCRIPTION
+        Checks various indicators to determine if the session can handle user interaction
+    #>
+
+    # Check if we're in an interactive PowerShell session
+    if ([Environment]::UserInteractive -and -not [Console]::IsInputRedirected) {
+        return $true
+    }
+
+    # Check if we have a console window
+    try {
+        $null = [Console]::WindowWidth
+        return $true
+    }
+    catch {
+        return $false
+    }
+}
+
+function Show-PostInstallMenu {
+    <#
+    .SYNOPSIS
+        Shows an interactive menu after installation completion
+    .DESCRIPTION
+        Provides user-friendly options to continue working with Augment VIP
+    #>
+    param(
+        [string]$InstallDirectory,
+        [bool]$LastOperationSuccess = $true
+    )
+
+    Write-Host ""
+    Write-ColoredOutput "╔══════════════════════════════════════════════════════════════╗" "Cyan"
+    Write-ColoredOutput "║                    Augment VIP - 操作完成                     ║" "Cyan"
+    Write-ColoredOutput "╚══════════════════════════════════════════════════════════════╝" "Cyan"
+    Write-Host ""
+
+    if ($LastOperationSuccess) {
+        Write-Success "✓ 操作已成功完成！"
+    } else {
+        Write-Warning "⚠ 操作完成，但可能存在一些问题"
+    }
+
+    Write-Host ""
+    Write-Info "安装目录: $InstallDirectory"
+    Write-Host ""
+
+    do {
+        Write-ColoredOutput "请选择下一步操作:" "Yellow"
+        Write-Host "  [1] 重新运行清理操作 (All)"
+        Write-Host "  [2] 仅清理数据库 (Clean)"
+        Write-Host "  [3] 仅修改遥测ID (ModifyTelemetry)"
+        Write-Host "  [4] 预览模式 (Preview)"
+        Write-Host "  [5] 打开安装目录"
+        Write-Host "  [6] 显示帮助信息"
+        Write-Host "  [0] 退出"
+        Write-Host ""
+
+        $choice = Read-Host "请输入选择 (0-6)"
+
+        switch ($choice) {
+            "1" {
+                Write-Info "重新运行完整清理操作..."
+                Push-Location $InstallDirectory
+                try {
+                    & ".\scripts\augment-vip-launcher.ps1" -Operation "All"
+                    Write-Success "操作完成！"
+                } catch {
+                    Write-Error "操作失败: $($_.Exception.Message)"
+                } finally {
+                    Pop-Location
+                }
+                Write-Host ""
+            }
+            "2" {
+                Write-Info "运行数据库清理操作..."
+                Push-Location $InstallDirectory
+                try {
+                    & ".\scripts\augment-vip-launcher.ps1" -Operation "Clean"
+                    Write-Success "数据库清理完成！"
+                } catch {
+                    Write-Error "操作失败: $($_.Exception.Message)"
+                } finally {
+                    Pop-Location
+                }
+                Write-Host ""
+            }
+            "3" {
+                Write-Info "运行遥测ID修改操作..."
+                Push-Location $InstallDirectory
+                try {
+                    & ".\scripts\augment-vip-launcher.ps1" -Operation "ModifyTelemetry"
+                    Write-Success "遥测ID修改完成！"
+                } catch {
+                    Write-Error "操作失败: $($_.Exception.Message)"
+                } finally {
+                    Pop-Location
+                }
+                Write-Host ""
+            }
+            "4" {
+                Write-Info "运行预览模式..."
+                Push-Location $InstallDirectory
+                try {
+                    & ".\scripts\augment-vip-launcher.ps1" -Operation "Preview"
+                    Write-Success "预览完成！"
+                } catch {
+                    Write-Error "操作失败: $($_.Exception.Message)"
+                } finally {
+                    Pop-Location
+                }
+                Write-Host ""
+            }
+            "5" {
+                Write-Info "打开安装目录: $InstallDirectory"
+                try {
+                    if ($IsWindows -or $PSVersionTable.PSEdition -eq "Desktop") {
+                        Start-Process "explorer.exe" -ArgumentList $InstallDirectory
+                    } else {
+                        Write-Info "请手动导航到: $InstallDirectory"
+                    }
+                } catch {
+                    Write-Warning "无法自动打开目录，请手动导航到: $InstallDirectory"
+                }
+                Write-Host ""
+            }
+            "6" {
+                Show-Help
+                Write-Host ""
+            }
+            "0" {
+                Write-Info "感谢使用 Augment VIP！"
+                return
+            }
+            default {
+                Write-Warning "无效选择，请输入 0-6 之间的数字"
+                Write-Host ""
+            }
+        }
+    } while ($choice -ne "0")
 }
 
 function Install-Repository {
@@ -568,6 +720,11 @@ function Main {
                     $script:DetailedOutput = $envParams[$envParam]
                 }
             }
+            'Interactive' {
+                if (-not $Interactive -and $envParams[$envParam]) {
+                    $script:Interactive = $envParams[$envParam]
+                }
+            }
         }
     }
 
@@ -624,17 +781,46 @@ function Main {
     Write-Info "  Force Windows: $UseWindows"
 
     $success = Invoke-AugmentVIP -Operation $Operation -CreateBackup $createBackup -UsePython $UsePython -UseWindows $UseWindows -AutoInstallDependencies $AutoInstallDependencies -SkipDependencyInstall $SkipDependencyInstall
-    
+
+    # Determine if we should show interactive menu
+    $shouldShowMenu = $false
+
+    if ($Interactive) {
+        # Explicitly requested interactive mode
+        $shouldShowMenu = $true
+    } elseif (-not $Interactive -and (Test-InteractiveSession)) {
+        # Auto-detect: show menu for interactive sessions unless explicitly disabled
+        $shouldShowMenu = $true
+    }
+
     if ($success) {
         Write-Success "Operation completed successfully!"
-        Write-Info ""
-        Write-Info "Installation directory: $script:InstallDir"
-        Write-Info "You can run operations again with:"
-        Write-Info "  cd '$script:InstallDir'"
-        Write-Info "  .\scripts\augment-vip-launcher.ps1 -Operation <operation>"
+
+        if ($shouldShowMenu) {
+            # Show interactive menu
+            Show-PostInstallMenu -InstallDirectory $script:InstallDir -LastOperationSuccess $true
+        } else {
+            # Traditional output for non-interactive sessions
+            Write-Info ""
+            Write-Info "Installation directory: $script:InstallDir"
+            Write-Info "You can run operations again with:"
+            Write-Info "  cd '$script:InstallDir'"
+            Write-Info "  .\scripts\augment-vip-launcher.ps1 -Operation <operation>"
+        }
         return 0
     } else {
         Write-Error "Operation failed"
+
+        if ($shouldShowMenu) {
+            # Show interactive menu even on failure for troubleshooting
+            Show-PostInstallMenu -InstallDirectory $script:InstallDir -LastOperationSuccess $false
+        } else {
+            Write-Info ""
+            Write-Info "Installation directory: $script:InstallDir"
+            Write-Info "You can try running operations manually with:"
+            Write-Info "  cd '$script:InstallDir'"
+            Write-Info "  .\scripts\augment-vip-launcher.ps1 -Operation <operation>"
+        }
         return 1
     }
 }
