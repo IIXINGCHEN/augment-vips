@@ -303,8 +303,11 @@ function Install-Repository {
     Write-Info "Downloading repository files..."
     try {
         $filesToDownload = @(
+            # Main launcher and scripts
             "scripts/augment-vip-launcher.ps1",
             "scripts/windows/vscode-cleanup-master.ps1",
+
+            # Windows PowerShell modules
             "scripts/windows/modules/Logger.psm1",
             "scripts/windows/modules/DependencyManager.psm1",
             "scripts/windows/modules/SystemDetection.psm1",
@@ -312,7 +315,28 @@ function Install-Repository {
             "scripts/windows/modules/BackupManager.psm1",
             "scripts/windows/modules/DatabaseCleaner.psm1",
             "scripts/windows/modules/TelemetryModifier.psm1",
-            "config/config.json"
+            "scripts/windows/modules/CommonUtils.psm1",
+            "scripts/windows/modules/UnifiedServices.psm1",
+
+            # Cross-platform Python scripts
+            "scripts/cross-platform/install.py",
+            "scripts/cross-platform/augment_vip/__init__.py",
+            "scripts/cross-platform/augment_vip/cli.py",
+            "scripts/cross-platform/augment_vip/db_cleaner.py",
+            "scripts/cross-platform/augment_vip/id_modifier.py",
+            "scripts/cross-platform/augment_vip/utils.py",
+
+            # Common utilities
+            "scripts/common/config_loader.py",
+            "scripts/common/id_generator.py",
+            "scripts/common/transaction_manager.py",
+
+            # Linux scripts
+            "scripts/linux/install.sh",
+
+            # Configuration files
+            "config/config.json",
+            "config/schema.json"
         )
 
         $downloadedFiles = @()
