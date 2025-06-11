@@ -42,7 +42,7 @@ Get-ChildItem .\scripts\ -Recurse | Unblock-File
 ### 高级模块问题诊断
 ```powershell
 # 检查模块依赖关系
-$modules = @("Logger", "SystemDetection", "VSCodeDiscovery", "BackupManager", "DatabaseCleaner", "TelemetryModifier")
+$modules = @("Logger", "DependencyManager", "SystemDetection", "VSCodeDiscovery", "BackupManager", "DatabaseCleaner", "TelemetryModifier")
 foreach ($module in $modules) {
     $modulePath = ".\scripts\windows\modules\$module.psm1"
     if (Test-Path $modulePath) {
@@ -68,13 +68,35 @@ Remove-Module Logger, SystemDetection -Force -ErrorAction SilentlyContinue
 
 ## 📦 依赖项问题
 
-### 高级依赖问题
+### 🎯 智能依赖管理（新功能）
+
+**自动解决依赖问题**：
+```powershell
+# 🚀 推荐：使用智能依赖管理自动解决
+.\scripts\augment-vip-launcher.ps1 -Operation Preview -AutoInstallDependencies
+
+# 手动检查依赖状态
+Import-Module .\scripts\windows\modules\DependencyManager.psm1 -Force
+Get-DependencyStatus
+
+# 手动触发智能安装
+Invoke-DependencyManagement -AutoInstall
+```
+
+**智能依赖管理特性**：
+- ✅ **自动检测**：sqlite3、curl、jq 安装状态
+- ✅ **智能跳过**：已安装的依赖自动跳过
+- ✅ **自动安装**：缺失的依赖自动安装
+- ✅ **多包管理器**：Chocolatey、Scoop、Winget 支持
+- ✅ **自动回退**：无包管理器时自动安装 Chocolatey
+
+### 传统依赖问题诊断
 ```powershell
 # 检查所有依赖项状态
 $dependencies = @{
     "sqlite3" = "sqlite3 -version"
     "curl" = "curl --version"
-    "git" = "git --version"
+    "jq" = "jq --version"
 }
 
 foreach ($dep in $dependencies.GetEnumerator()) {
@@ -82,7 +104,7 @@ foreach ($dep in $dependencies.GetEnumerator()) {
         $result = Invoke-Expression $dep.Value 2>$null
         Write-Host "✅ $($dep.Key): Available" -ForegroundColor Green
     } catch {
-        Write-Host "❌ $($dep.Key): Missing" -ForegroundColor Red
+        Write-Host "❌ $($dep.Key): Missing - 使用 -AutoInstallDependencies 自动安装" -ForegroundColor Red
     }
 }
 ```

@@ -52,6 +52,8 @@ This project is based on [azrilaiman2003/augment-vip](https://github.com/azrilai
 | `-Operation All` | 执行所有操作 | `-Operation All` |
 | `-Preview` | 预览模式 | `-Operation All -Preview` |
 | `-NoBackup` | 跳过备份 | `-Operation All -NoBackup` |
+| `-AutoInstallDependencies` | 智能自动安装依赖 | `-Operation All -AutoInstallDependencies` |
+| `-SkipDependencyInstall` | 跳过依赖检查 | `-Operation All -SkipDependencyInstall` |
 | `-UsePython` | 使用Python实现 | `-Operation All -UsePython` |
 | `-UseWindows` | 强制使用Windows实现 | `-Operation All -UseWindows` |
 | `-Help` | 显示帮助 | `-Help` |
@@ -70,6 +72,7 @@ This project is based on [azrilaiman2003/augment-vip](https://github.com/azrilai
 ### 📊 模块功能速查
 
 **Logger.psm1**: 日志系统 - `Initialize-Logger`, `Write-LogInfo/Warning/Error`
+**DependencyManager.psm1**: 智能依赖管理 - `Invoke-DependencyManagement`, `Test-Dependency`, `Install-MissingDependencies`
 **SystemDetection.psm1**: 系统检测 - `Test-SystemCompatibility`, `Get-SystemInformation`
 **VSCodeDiscovery.psm1**: VS Code发现 - `Find-VSCodeInstallations`, `Get-VSCodeInstallation`
 **BackupManager.psm1**: 备份管理 - `New-FileBackup`, `Restore-FileBackup`, `Clear-OldBackups`
@@ -81,6 +84,7 @@ This project is based on [azrilaiman2003/augment-vip](https://github.com/azrilai
 Augment VIP Cleaner 是一个专业的PowerShell工具套件，专门用于清理VS Code中的Augment相关数据和修改遥测标识符。该工具提供企业级的安全性、完整的备份恢复机制，并支持多种VS Code安装类型。
 
 ### 核心功能
+- **智能依赖管理**：自动检测和安装必需依赖（sqlite3, curl, jq），已安装的跳过，缺失的自动安装
 - **数据库清理**：移除所有Augment和Context7相关条目
 - **遥测修改**：生成新的安全随机遥测ID
 - **自动备份**：操作前自动创建备份，支持完整恢复
@@ -104,10 +108,17 @@ Augment VIP Cleaner 是一个专业的PowerShell工具套件，专门用于清�
 - **磁盘空间**：5GB 可用空间
 - **权限**：管理员权限
 
-### 必需依赖
-- **SQLite3**：用于数据库操作
-- **curl**：用于网络操作（可选）
-- **jq**：用于JSON处理（可选）
+### 必需依赖（智能自动管理）
+- **SQLite3**：用于数据库操作 - 🎯 **智能自动安装**
+- **curl**：用于网络操作（可选）- 🎯 **智能自动安装**
+- **jq**：用于JSON处理（可选）- 🎯 **智能自动安装**
+
+**🚀 新功能：智能依赖管理**
+- ✅ **自动检测**：系统启动时自动检测依赖安装状态
+- ✅ **智能跳过**：已安装的依赖自动跳过，避免重复安装
+- ✅ **自动安装**：缺失的依赖自动安装，支持多种包管理器
+- ✅ **包管理器支持**：Chocolatey（优先）、Scoop、Winget
+- ✅ **自动回退**：无包管理器时自动安装Chocolatey
 
 ### ⚠️ 关键：PowerShell执行策略配置
 Windows系统默认的PowerShell执行策略会阻止运行未签名脚本，这是最常见的运行问题。

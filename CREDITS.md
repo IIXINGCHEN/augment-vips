@@ -24,11 +24,12 @@ We deeply appreciate **azrilaiman2003** for creating the original augment-vip pr
 - ✅ **多架构支持** - x64/x86架构兼容
 
 ### 架构改进 / Architecture Improvements
-- ✅ **模块化设计** - 6个独立PowerShell模块
+- ✅ **模块化设计** - 7个独立PowerShell模块（新增智能依赖管理）
 - ✅ **企业级架构** - 清晰的职责分离和依赖管理
 - ✅ **可扩展性** - 易于添加新功能和自定义
 
 ### 功能增强 / Feature Enhancements
+- ✅ **智能依赖管理** - 自动检测和安装依赖，已安装的跳过，缺失的自动安装
 - ✅ **完整备份系统** - 自动备份、完整性验证、一键恢复
 - ✅ **多VS Code支持** - 标准版、Insiders版、便携版
 - ✅ **安全性增强** - SQL注入防护、加密安全随机数生成
@@ -49,16 +50,17 @@ We deeply appreciate **azrilaiman2003** for creating the original augment-vip pr
 ## 📊 开发统计 / Development Statistics
 
 ### 代码贡献 / Code Contributions
-- **新增代码行数**: 3000+ 行 PowerShell 代码
+- **新增代码行数**: 3500+ 行 PowerShell 代码
 - **文档行数**: 2000+ 行详细文档
-- **模块数量**: 6个核心功能模块
-- **函数数量**: 60+ 个导出函数
+- **模块数量**: 7个核心功能模块（新增智能依赖管理模块）
+- **函数数量**: 70+ 个导出函数
 
 ### 功能对比 / Feature Comparison
 
 | 功能特性 | 原项目 | Windows增强版 |
 |---------|--------|---------------|
 | 基础清理功能 | ✅ | ✅ |
+| 智能依赖管理 | ❌ | ✅ |
 | Windows系统优化 | ❌ | ✅ |
 | 模块化架构 | ❌ | ✅ |
 | 备份恢复系统 | ❌ | ✅ |

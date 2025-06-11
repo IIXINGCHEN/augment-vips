@@ -16,6 +16,7 @@
 
 ## 核心功能
 
+- **智能依赖管理**: 自动检测和安装必需依赖（sqlite3, curl, jq），已安装的跳过，缺失的自动安装
 - **数据库清理**: 移除VS Code SQLite数据库中的所有相关条目
 - **遥测修改**: 生成新的安全随机遥测ID (machineId, deviceId, sqmId)
 - **自动备份**: 在任何修改前创建备份，具备完整性验证
@@ -36,7 +37,7 @@
 
 ### Windows特定要求
 - PowerShell执行策略设置为RemoteSigned或Unrestricted
-- SQLite3, curl, jq (自动检查)
+- SQLite3, curl, jq (智能自动安装 - 已安装的跳过，缺失的自动安装)
 
 ### Linux/macOS特定要求
 - Python 3.6或更高版本
@@ -174,6 +175,8 @@ irm https://gh.imixc.top/raw.githubusercontent.com/IIXINGCHEN/augment-vip/main/i
 | `-Preview` | 显示预览而不进行更改 |
 | `-Backup` | 创建备份 (默认: true) |
 | `-NoBackup` | 跳过备份创建 |
+| `-AutoInstallDependencies` | 自动安装缺失的依赖（智能跳过已安装的） |
+| `-SkipDependencyInstall` | 跳过依赖安装检查 |
 | `-IncludePortable` | 包含便携版VS Code安装 |
 | `-LogFile <path>` | 指定自定义日志文件路径 |
 | `-Verbose` | 启用详细日志 |
@@ -271,6 +274,10 @@ Restore-FileBackup -BackupInfo $latestBackup -Force
 
 **"SQLite3 command not found"**
 ```powershell
+# 🎯 新功能：智能自动安装（推荐）
+.\scripts\augment-vip-launcher.ps1 -Operation Preview -AutoInstallDependencies
+
+# 手动安装方式：
 # 使用Chocolatey安装
 choco install sqlite
 
@@ -280,6 +287,13 @@ scoop install sqlite
 # 或使用winget
 winget install sqlite
 ```
+
+**智能依赖管理说明**：
+- ✅ **自动检测**：系统会自动检测 sqlite3、curl、jq 的安装状态
+- ✅ **智能跳过**：已安装的依赖会被自动跳过，不会重复安装
+- ✅ **自动安装**：只安装缺失的依赖，支持多种包管理器
+- ✅ **包管理器支持**：优先使用 Chocolatey，备选 Scoop 和 Winget
+- ✅ **自动回退**：如果没有包管理器，会自动安装 Chocolatey
 
 **"执行策略阻止脚本执行"**
 ```powershell
@@ -329,6 +343,7 @@ Test-SystemCompatibility
 
 ### 核心模块
 - **Logger.psm1**: 统一日志记录和进度报告
+- **DependencyManager.psm1**: 智能依赖检测和自动安装管理
 - **SystemDetection.psm1**: 系统兼容性和要求检查
 - **VSCodeDiscovery.psm1**: VS Code安装检测
 - **BackupManager.psm1**: 备份创建、验证和恢复
