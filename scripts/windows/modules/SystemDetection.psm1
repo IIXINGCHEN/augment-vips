@@ -9,6 +9,9 @@
 # Import Logger module
 Import-Module (Join-Path $PSScriptRoot "Logger.psm1") -Force
 
+# Import DependencyManager module
+Import-Module (Join-Path $PSScriptRoot "DependencyManager.psm1") -Force
+
 # System requirements
 $script:MinWindowsVersion = [Version]"10.0.0.0"
 $script:MinPowerShellVersion = [Version]"5.1.0.0"
@@ -44,10 +47,15 @@ function Test-SystemCompatibility {
         $isCompatible = $false
     }
     
-    # Check dependencies
-    if (-not $SkipDependencies -and -not (Test-Dependencies)) {
-        Write-LogWarning "Some dependencies are missing, but continuing anyway..."
-        # Don't fail on missing dependencies, just warn
+    # Check dependencies with enhanced management
+    if (-not $SkipDependencies) {
+        $dependencyStatus = Get-DependencyStatus
+        if ($dependencyStatus.MissingDependencies.Count -gt 0) {
+            Write-LogWarning "Missing dependencies detected: $($dependencyStatus.MissingDependencies -join ', ')"
+            Write-LogInfo "Use Invoke-DependencyManagement to automatically install missing dependencies"
+        } else {
+            Write-LogSuccess "All dependencies are available"
+        }
     }
     
     # Check execution policy
@@ -170,6 +178,34 @@ function Test-Dependencies {
     
     Write-LogSuccess "All dependencies are available"
     return $true
+}
+
+<#
+.SYNOPSIS
+    Enhanced dependency checking with automatic installation option
+.PARAMETER AutoInstall
+    Automatically install missing dependencies
+.PARAMETER SkipInstall
+    Only check dependencies, don't install
+.OUTPUTS
+    System.Boolean - True if all dependencies are available
+#>
+function Test-DependenciesEnhanced {
+    [CmdletBinding()]
+    param(
+        [switch]$AutoInstall,
+        [switch]$SkipInstall
+    )
+
+    Write-LogInfo "Enhanced dependency checking..."
+
+    try {
+        return Invoke-DependencyManagement -AutoInstall:$AutoInstall -SkipInstall:$SkipInstall
+    }
+    catch {
+        Write-LogError "Enhanced dependency check failed, falling back to basic check" -Exception $_.Exception
+        return Test-Dependencies
+    }
 }
 
 <#
@@ -419,6 +455,7 @@ Export-ModuleMember -Function @(
     'Test-WindowsVersion',
     'Test-PowerShellVersion',
     'Test-Dependencies',
+    'Test-DependenciesEnhanced',
     'Test-ExecutionPolicy',
     'Test-AdministratorPrivileges',
     'Get-SystemInformation',

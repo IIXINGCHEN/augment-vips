@@ -51,7 +51,13 @@ param(
     [switch]$UseWindows,
     
     [Parameter(Mandatory = $false)]
-    [switch]$VerboseOutput
+    [switch]$VerboseOutput,
+
+    [Parameter(Mandatory = $false)]
+    [switch]$AutoInstallDependencies,
+
+    [Parameter(Mandatory = $false)]
+    [switch]$SkipDependencyInstall
 )
 
 # Get script directory
@@ -99,12 +105,14 @@ Usage:
   .\scripts\augment-vip-launcher.ps1 [options]
 
 Parameters:
-  -Operation <string>     Operation to perform (Clean, ModifyTelemetry, All, Preview)
-  -NoBackup              Skip creating backups (not recommended)
-  -UsePython             Force use of Python cross-platform implementation
-  -UseWindows            Force use of Windows PowerShell implementation
-  -VerboseOutput         Enable verbose output
-  -Help                  Show this help information
+  -Operation <string>           Operation to perform (Clean, ModifyTelemetry, All, Preview)
+  -NoBackup                    Skip creating backups (not recommended)
+  -UsePython                   Force use of Python cross-platform implementation
+  -UseWindows                  Force use of Windows PowerShell implementation
+  -AutoInstallDependencies     Automatically install missing dependencies
+  -SkipDependencyInstall       Skip dependency installation check
+  -VerboseOutput               Enable verbose output
+  -Help                        Show this help information
 
 Examples:
   .\scripts\augment-vip-launcher.ps1 -Operation All
@@ -151,7 +159,9 @@ function Test-PythonImplementationAvailable {
 function Invoke-WindowsImplementation {
     param(
         [string]$Operation,
-        [bool]$CreateBackup
+        [bool]$CreateBackup,
+        [bool]$AutoInstallDependencies = $false,
+        [bool]$SkipDependencyInstall = $false
     )
     
     $windowsScript = Join-Path $ProjectRoot "scripts\windows\vscode-cleanup-master.ps1"
@@ -178,6 +188,14 @@ function Invoke-WindowsImplementation {
 
     if (-not $CreateBackup) {
         $scriptArgs["NoBackup"] = $true
+    }
+
+    if ($AutoInstallDependencies) {
+        $scriptArgs["AutoInstallDependencies"] = $true
+    }
+
+    if ($SkipDependencyInstall) {
+        $scriptArgs["SkipDependencyInstall"] = $true
     }
 
     # Note: Verbose is handled by PowerShell's built-in mechanism via [CmdletBinding()]
@@ -325,9 +343,13 @@ function Main {
     
     # Execute the selected implementation
     $success = switch ($implementation) {
-        "Windows" { Invoke-WindowsImplementation -Operation $Operation -CreateBackup $createBackup }
-        "Python" { Invoke-PythonImplementation -Operation $Operation -CreateBackup $createBackup }
-        default { 
+        "Windows" {
+            Invoke-WindowsImplementation -Operation $Operation -CreateBackup $createBackup -AutoInstallDependencies $AutoInstallDependencies -SkipDependencyInstall $SkipDependencyInstall
+        }
+        "Python" {
+            Invoke-PythonImplementation -Operation $Operation -CreateBackup $createBackup
+        }
+        default {
             Write-Error "Unknown implementation: $implementation"
             $false
         }

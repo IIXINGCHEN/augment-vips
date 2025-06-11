@@ -31,7 +31,9 @@ param(
     [switch]$NoBackup,
     [switch]$IncludePortable = $true,
     [string]$LogFile,
-    [switch]$Help
+    [switch]$Help,
+    [switch]$AutoInstallDependencies,
+    [switch]$SkipDependencyInstall
 )
 
 # Set error handling
@@ -45,6 +47,7 @@ $ProjectRoot = Split-Path -Parent (Split-Path -Parent $ScriptDir)
 # Import all required modules in dependency order
 $requiredModules = @(
     "Logger.psm1",
+    "DependencyManager.psm1",
     "SystemDetection.psm1",
     "VSCodeDiscovery.psm1",
     "BackupManager.psm1",
@@ -183,16 +186,18 @@ Usage:
   .\vscode-cleanup-master.ps1 [options]
 
 Options:
-  -Clean              Clean Augment-related database entries
-  -ModifyTelemetry    Modify VS Code telemetry IDs
-  -All                Perform all operations (clean + modify telemetry)
-  -Preview            Show preview without making changes
-  -NoBackup           Skip backup creation (backups enabled by default)
-  -IncludePortable    Include portable VS Code installations (default: true)
-  -LogFile <path>     Path to log file (optional)
-  -Verbose            Enable verbose logging
-  -WhatIf             Show what would be done without executing
-  -Help               Show this help information
+  -Clean                    Clean Augment-related database entries
+  -ModifyTelemetry          Modify VS Code telemetry IDs
+  -All                      Perform all operations (clean + modify telemetry)
+  -Preview                  Show preview without making changes
+  -NoBackup                 Skip backup creation (backups enabled by default)
+  -IncludePortable          Include portable VS Code installations (default: true)
+  -LogFile <path>           Path to log file (optional)
+  -AutoInstallDependencies  Automatically install missing dependencies
+  -SkipDependencyInstall    Skip dependency installation check
+  -Verbose                  Enable verbose logging
+  -WhatIf                   Show what would be done without executing
+  -Help                     Show this help information
 
 Examples:
   .\vscode-cleanup-master.ps1 -All
@@ -254,23 +259,39 @@ function Initialize-Environment {
 
 <#
 .SYNOPSIS
-    Performs system compatibility check
+    Performs system compatibility check with enhanced dependency management
 #>
 function Test-Prerequisites {
     Write-LogInfo "Checking system prerequisites..."
-    
+
     # System compatibility check
-    if (-not (Test-SystemCompatibility)) {
+    if (-not (Test-SystemCompatibility -SkipDependencies)) {
         Write-LogError "System compatibility check failed"
         return $false
     }
-    
+
+    # Enhanced dependency check with automatic installation option
+    if (-not $SkipDependencyInstall) {
+        Write-LogInfo "Checking dependencies with enhanced management..."
+        if (-not (Test-DependenciesEnhanced -AutoInstall:$AutoInstallDependencies)) {
+            if ($AutoInstallDependencies) {
+                Write-LogError "Automatic dependency installation failed"
+                return $false
+            } else {
+                Write-LogWarning "Some dependencies are missing. Use -AutoInstallDependencies to install them automatically."
+                Write-LogInfo "Continuing with available dependencies..."
+            }
+        }
+    } else {
+        Write-LogInfo "Skipping dependency installation check as requested"
+    }
+
     # VS Code operation requirements
     if (-not (Test-VSCodeOperationRequirements)) {
         Write-LogError "VS Code operation requirements not met"
         return $false
     }
-    
+
     Write-LogSuccess "All prerequisites met"
     return $true
 }
