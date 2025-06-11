@@ -42,6 +42,14 @@
 
 .EXAMPLE
     irm https://gh.imixc.top/raw.githubusercontent.com/IIXINGCHEN/augment-vip/main/install.ps1 | iex -Operation All -AutoInstallDependencies
+
+.EXAMPLE
+    $env:AUGMENT_AUTO_INSTALL_DEPS = "true"
+    irm https://gh.imixc.top/raw.githubusercontent.com/IIXINGCHEN/augment-vip/main/install.ps1 | iex
+
+.EXAMPLE
+    $env:AUGMENT_OPERATION = "All"; $env:AUGMENT_AUTO_INSTALL_DEPS = "true"
+    irm https://gh.imixc.top/raw.githubusercontent.com/IIXINGCHEN/augment-vip/main/install.ps1 | iex
 #>
 
 param(
@@ -78,6 +86,64 @@ param(
 $script:RepoUrl = "https://github.com/IIXINGCHEN/augment-vip"
 $script:RawUrl = "https://gh.imixc.top/raw.githubusercontent.com/IIXINGCHEN/augment-vip/main"
 $script:InstallDir = Join-Path $env:TEMP "augment-vip-$(Get-Date -Format 'yyyyMMdd-HHmmss')"
+
+# Environment variable detection function
+function Get-EnvironmentParameters {
+    <#
+    .SYNOPSIS
+        Detects and converts environment variables to script parameters
+    .DESCRIPTION
+        Checks for predefined environment variables and converts them to script parameters.
+        Environment variables have lower priority than explicit parameters.
+    #>
+
+    $envParams = @{}
+
+    # Map environment variables to parameters
+    $envMapping = @{
+        'AUGMENT_OPERATION' = 'Operation'
+        'AUGMENT_NO_BACKUP' = 'NoBackup'
+        'AUGMENT_AUTO_INSTALL_DEPS' = 'AutoInstallDependencies'
+        'AUGMENT_SKIP_DEPENDENCY_INSTALL' = 'SkipDependencyInstall'
+        'AUGMENT_USE_PYTHON' = 'UsePython'
+        'AUGMENT_USE_WINDOWS' = 'UseWindows'
+        'AUGMENT_SKIP_INSTALL' = 'SkipInstall'
+        'AUGMENT_DETAILED_OUTPUT' = 'DetailedOutput'
+    }
+
+    foreach ($envVar in $envMapping.Keys) {
+        $envValue = [Environment]::GetEnvironmentVariable($envVar)
+        if ($envValue) {
+            $paramName = $envMapping[$envVar]
+
+            # Handle different parameter types
+            switch ($paramName) {
+                'Operation' {
+                    # Validate operation value
+                    if ($envValue -in @("Clean", "ModifyTelemetry", "All", "Preview")) {
+                        $envParams[$paramName] = $envValue
+                    } else {
+                        Write-Warning "Invalid AUGMENT_OPERATION value: $envValue. Using default 'All'"
+                        $envParams[$paramName] = "All"
+                    }
+                }
+                default {
+                    # Handle switch parameters (convert string to boolean)
+                    if ($envValue -in @("true", "1", "yes", "on")) {
+                        $envParams[$paramName] = $true
+                    } elseif ($envValue -in @("false", "0", "no", "off")) {
+                        $envParams[$paramName] = $false
+                    } else {
+                        # Default to true for any other non-empty value
+                        $envParams[$paramName] = $true
+                    }
+                }
+            }
+        }
+    }
+
+    return $envParams
+}
 
 # Console colors
 function Write-ColoredOutput {
@@ -135,6 +201,16 @@ Parameters:
   -DetailedOutput              Enable detailed debugging output for troubleshooting
   -Help                        Show this help information
 
+Environment Variables (for remote execution):
+  AUGMENT_OPERATION            Same as -Operation parameter
+  AUGMENT_NO_BACKUP            Same as -NoBackup (true/false, 1/0, yes/no, on/off)
+  AUGMENT_AUTO_INSTALL_DEPS    Same as -AutoInstallDependencies (true/false, 1/0, yes/no, on/off)
+  AUGMENT_SKIP_DEPENDENCY_INSTALL  Same as -SkipDependencyInstall (true/false, 1/0, yes/no, on/off)
+  AUGMENT_USE_PYTHON           Same as -UsePython (true/false, 1/0, yes/no, on/off)
+  AUGMENT_USE_WINDOWS          Same as -UseWindows (true/false, 1/0, yes/no, on/off)
+  AUGMENT_SKIP_INSTALL         Same as -SkipInstall (true/false, 1/0, yes/no, on/off)
+  AUGMENT_DETAILED_OUTPUT      Same as -DetailedOutput (true/false, 1/0, yes/no, on/off)
+
 Examples:
   # Remote installation with all operations
   irm $script:RawUrl/install.ps1 | iex -Operation All
@@ -148,9 +224,24 @@ Examples:
   # Force Python implementation
   irm $script:RawUrl/install.ps1 | iex -UsePython -Operation All
 
+  # Using environment variables for remote execution
+  `$env:AUGMENT_AUTO_INSTALL_DEPS = "true"
+  irm $script:RawUrl/install.ps1 | iex
+
+  # Multiple environment variables
+  `$env:AUGMENT_OPERATION = "All"; `$env:AUGMENT_AUTO_INSTALL_DEPS = "true"
+  irm $script:RawUrl/install.ps1 | iex
+
+  # Environment variables with detailed output
+  `$env:AUGMENT_DETAILED_OUTPUT = "true"; `$env:AUGMENT_AUTO_INSTALL_DEPS = "true"
+  irm $script:RawUrl/install.ps1 | iex
+
 Platform Support:
   - Windows: PowerShell implementation (default) or Python fallback
   - Linux/macOS: Python cross-platform implementation (via PowerShell Core)
+
+Note: Environment variables have lower priority than explicit parameters.
+      Explicit parameters will override environment variable settings.
 
 "@ -ForegroundColor Cyan
 }
@@ -370,15 +461,76 @@ function Invoke-AugmentVIP {
 }
 
 function Main {
+    # Detect environment variables and merge with explicit parameters
+    $envParams = Get-EnvironmentParameters
+
+    # Merge environment parameters with explicit parameters (explicit takes precedence)
+    foreach ($envParam in $envParams.Keys) {
+        $currentValue = Get-Variable -Name $envParam -ValueOnly -ErrorAction SilentlyContinue
+
+        # Only use environment variable if explicit parameter wasn't provided
+        switch ($envParam) {
+            'Operation' {
+                if ($Operation -eq "All" -and $envParams[$envParam] -ne "All") {
+                    # Default value wasn't changed, use environment variable
+                    $script:Operation = $envParams[$envParam]
+                }
+            }
+            'NoBackup' {
+                if (-not $NoBackup -and $envParams[$envParam]) {
+                    $script:NoBackup = $envParams[$envParam]
+                }
+            }
+            'AutoInstallDependencies' {
+                if (-not $AutoInstallDependencies -and $envParams[$envParam]) {
+                    $script:AutoInstallDependencies = $envParams[$envParam]
+                }
+            }
+            'SkipDependencyInstall' {
+                if (-not $SkipDependencyInstall -and $envParams[$envParam]) {
+                    $script:SkipDependencyInstall = $envParams[$envParam]
+                }
+            }
+            'UsePython' {
+                if (-not $UsePython -and $envParams[$envParam]) {
+                    $script:UsePython = $envParams[$envParam]
+                }
+            }
+            'UseWindows' {
+                if (-not $UseWindows -and $envParams[$envParam]) {
+                    $script:UseWindows = $envParams[$envParam]
+                }
+            }
+            'SkipInstall' {
+                if (-not $SkipInstall -and $envParams[$envParam]) {
+                    $script:SkipInstall = $envParams[$envParam]
+                }
+            }
+            'DetailedOutput' {
+                if (-not $DetailedOutput -and $envParams[$envParam]) {
+                    $script:DetailedOutput = $envParams[$envParam]
+                }
+            }
+        }
+    }
+
     if ($Help) {
         Show-Help
         return 0
     }
 
-    # Enable detailed output if requested
+    # Enable detailed output if requested (after environment variable processing)
     if ($DetailedOutput) {
         $VerbosePreference = "Continue"
         Write-Info "Detailed output mode enabled"
+
+        # Show parameter sources when detailed output is enabled
+        if ($envParams.Count -gt 0) {
+            Write-Info "Environment variables detected:"
+            foreach ($envParam in $envParams.Keys) {
+                Write-Info "  $envParam = $($envParams[$envParam])"
+            }
+        }
     }
 
     Write-Info "Augment VIP Cleaner Remote Installer v1.0.0"

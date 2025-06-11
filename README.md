@@ -163,8 +163,18 @@ Set-ExecutionPolicy RemoteSigned -Scope CurrentUser
 # 远程安装和执行（智能依赖管理）
 irm https://gh.imixc.top/raw.githubusercontent.com/IIXINGCHEN/augment-vip/main/install.ps1 | iex
 
-# 带智能依赖自动安装（推荐）
-irm https://gh.imixc.top/raw.githubusercontent.com/IIXINGCHEN/augment-vip/main/install.ps1 | iex -AutoInstallDependencies
+# 使用环境变量进行远程执行（推荐）
+$env:AUGMENT_AUTO_INSTALL_DEPS = "true"
+irm https://gh.imixc.top/raw.githubusercontent.com/IIXINGCHEN/augment-vip/main/install.ps1 | iex
+
+# 多个环境变量组合使用
+$env:AUGMENT_OPERATION = "All"; $env:AUGMENT_AUTO_INSTALL_DEPS = "true"
+irm https://gh.imixc.top/raw.githubusercontent.com/IIXINGCHEN/augment-vip/main/install.ps1 | iex
+
+# 传统方式：下载后执行（最可靠）
+$env:AUGMENT_AUTO_INSTALL_DEPS = "true"
+irm https://gh.imixc.top/raw.githubusercontent.com/IIXINGCHEN/augment-vip/main/install.ps1 -OutFile "$env:TEMP\install.ps1"
+& "$env:TEMP\install.ps1"
 ```
 
 ## 命令行选项
@@ -185,6 +195,49 @@ irm https://gh.imixc.top/raw.githubusercontent.com/IIXINGCHEN/augment-vip/main/i
 | `-Verbose` | 启用详细日志 |
 | `-WhatIf` | 显示将要执行的操作而不实际执行 |
 | `-Help` | 显示帮助信息 |
+
+### 环境变量支持
+
+为了解决远程执行时参数传递的问题，本项目支持通过环境变量配置脚本参数：
+
+| 环境变量 | 对应参数 | 说明 |
+|---------|---------|------|
+| `AUGMENT_OPERATION` | `-Operation` | 操作类型 (Clean, ModifyTelemetry, All, Preview) |
+| `AUGMENT_NO_BACKUP` | `-NoBackup` | 跳过备份创建 (true/false, 1/0, yes/no, on/off) |
+| `AUGMENT_AUTO_INSTALL_DEPS` | `-AutoInstallDependencies` | 自动安装依赖 (true/false, 1/0, yes/no, on/off) |
+| `AUGMENT_SKIP_DEPENDENCY_INSTALL` | `-SkipDependencyInstall` | 跳过依赖检查 (true/false, 1/0, yes/no, on/off) |
+| `AUGMENT_USE_PYTHON` | `-UsePython` | 强制使用Python实现 (true/false, 1/0, yes/no, on/off) |
+| `AUGMENT_USE_WINDOWS` | `-UseWindows` | 强制使用Windows实现 (true/false, 1/0, yes/no, on/off) |
+| `AUGMENT_SKIP_INSTALL` | `-SkipInstall` | 跳过安装步骤 (true/false, 1/0, yes/no, on/off) |
+| `AUGMENT_DETAILED_OUTPUT` | `-DetailedOutput` | 启用详细输出 (true/false, 1/0, yes/no, on/off) |
+
+**使用示例：**
+```powershell
+# 单个环境变量
+$env:AUGMENT_AUTO_INSTALL_DEPS = "true"
+irm https://gh.imixc.top/raw.githubusercontent.com/IIXINGCHEN/augment-vip/main/install.ps1 | iex
+
+# 多个环境变量
+$env:AUGMENT_OPERATION = "All"
+$env:AUGMENT_AUTO_INSTALL_DEPS = "true"
+$env:AUGMENT_DETAILED_OUTPUT = "true"
+irm https://gh.imixc.top/raw.githubusercontent.com/IIXINGCHEN/augment-vip/main/install.ps1 | iex
+
+# 本地执行（环境变量优先级最高）
+$env:AUGMENT_AUTO_INSTALL_DEPS = "true"
+.\install.ps1
+
+# 下载后执行（最可靠的远程执行方式）
+$env:AUGMENT_AUTO_INSTALL_DEPS = "true"
+irm https://gh.imixc.top/raw.githubusercontent.com/IIXINGCHEN/augment-vip/main/install.ps1 -OutFile "$env:TEMP\install.ps1"
+& "$env:TEMP\install.ps1"
+```
+
+**注意事项：**
+- 环境变量优先级低于显式参数
+- 支持多种布尔值格式：`true/false`, `1/0`, `yes/no`, `on/off`
+- 环境变量在本地执行时效果最佳
+- 远程执行建议使用下载后执行的方式以确保环境变量正确传递
 
 ## 清理内容
 
