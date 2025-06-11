@@ -10,8 +10,19 @@ import shutil
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 
-# Add common directory to path for config loader
-sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', 'common'))
+# Security exception class
+class SecurityError(Exception):
+    """Raised when a security violation is detected"""
+    pass
+
+# SECURITY FIX: Add common directory to path with validation
+common_path = os.path.join(os.path.dirname(__file__), '..', '..', 'common')
+# Validate the path doesn't escape the project directory
+common_path = os.path.abspath(common_path)
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
+if not common_path.startswith(project_root):
+    raise SecurityError(f"SECURITY: Path traversal detected - common path outside project: {common_path}")
+sys.path.append(common_path)
 
 from .utils import (
     info, success, error, warning,

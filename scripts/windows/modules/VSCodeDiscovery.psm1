@@ -218,12 +218,19 @@ function Find-PortableInDirectory {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory = $true)]
+        [ValidateNotNullOrEmpty()]
         [string]$Directory
     )
     
     $installations = @()
     
     try {
+        # SECURITY FIX: Enhanced input validation
+        if (-not (Test-SafePath -Path $Directory)) {
+            Write-LogWarning "SECURITY: Unsafe directory path detected: $Directory"
+            return $installations
+        }
+
         # Look for Code.exe in the directory and subdirectories
         $codeExes = Get-ChildItem -Path $Directory -Filter "Code.exe" -Recurse -ErrorAction SilentlyContinue
         
@@ -310,6 +317,7 @@ function Find-DatabaseFiles {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory = $true)]
+        [ValidateNotNullOrEmpty()]
         [string]$DataPath
     )
 
@@ -367,6 +375,7 @@ function Get-VSCodeVersion {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory = $true)]
+        [ValidateNotNullOrEmpty()]
         [string]$InstallPath
     )
 

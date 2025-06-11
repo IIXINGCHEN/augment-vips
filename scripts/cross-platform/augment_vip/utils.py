@@ -14,6 +14,11 @@ import re
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Tuple
 
+# Security exception class
+class SecurityError(Exception):
+    """Raised when a security violation is detected"""
+    pass
+
 # Console colors
 try:
     from colorama import init, Fore, Style
@@ -150,7 +155,14 @@ def backup_file(file_path: Path) -> Path:
 # ID generation functions moved to unified service
 # Import from common ID generator for consistency
 try:
-    sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', 'common'))
+    # SECURITY FIX: Add common directory to path with validation
+    common_path = os.path.join(os.path.dirname(__file__), '..', '..', 'common')
+    # Validate the path doesn't escape the project directory
+    common_path = os.path.abspath(common_path)
+    project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
+    if not common_path.startswith(project_root):
+        raise SecurityError(f"SECURITY: Path traversal detected - common path outside project: {common_path}")
+    sys.path.append(common_path)
     from id_generator import (
         generate_machine_id, generate_device_id, generate_sqm_id,
         generate_session_id, generate_instance_id, generate_timestamp

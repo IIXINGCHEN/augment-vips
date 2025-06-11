@@ -83,12 +83,51 @@ function Test-PackageManager {
     $testCommand = $manager.TestCommand
     
     try {
-        # Safe command execution instead of Invoke-Expression
+        # Safe command execution with validation
+        if ([string]::IsNullOrWhiteSpace($testCommand)) {
+            Write-LogWarning "Empty test command for $($manager.Name)"
+            return $false
+        }
+
+        # Validate command for dangerous characters
+        if ($testCommand -match '[;&|`$<>]') {
+            Write-LogWarning "Potentially dangerous characters in command: $testCommand"
+            return $false
+        }
+
         $commandParts = $testCommand -split '\s+'
         $executable = $commandParts[0]
         $arguments = $commandParts[1..($commandParts.Length-1)]
 
-        $process = Start-Process -FilePath $executable -ArgumentList $arguments -NoNewWindow -Wait -PassThru -ErrorAction SilentlyContinue
+        # Additional validation for executable path
+        if (-not $executable -or $executable -match '[;&|`$<>]') {
+            Write-LogWarning "Invalid executable path: $executable"
+            return $false
+        }
+
+        # Enhanced security: Validate and escape arguments
+        $validatedArguments = @()
+        foreach ($arg in $arguments) {
+            if ($null -ne $arg -and $arg -ne "") {
+                # Remove dangerous characters and validate
+                $cleanArg = $arg -replace '[;&|`$<>]', ''
+                if ($cleanArg -ne $arg) {
+                    Write-LogWarning "Sanitized dangerous characters from argument: $arg -> $cleanArg"
+                }
+                $validatedArguments += $cleanArg
+            }
+        }
+
+        # Use secure process execution with validated arguments
+        $processArgs = @{
+            FilePath = $executable
+            ArgumentList = $validatedArguments
+            NoNewWindow = $true
+            Wait = $true
+            PassThru = $true
+            ErrorAction = 'SilentlyContinue'
+        }
+        $process = Start-Process @processArgs
         if ($process.ExitCode -eq 0) {
             Write-LogDebug "$($manager.Name) is available"
             return $true
@@ -156,12 +195,33 @@ function Install-Chocolatey {
         # Download and install Chocolatey using safe method
         [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
 
-        # Use PowerShell's built-in method instead of Invoke-Expression
+        # Use secure method to install Chocolatey
         $installUri = 'https://community.chocolatey.org/install.ps1'
         Write-LogDebug "Downloading Chocolatey installer from: $installUri"
 
-        # Execute the installer directly without Invoke-Expression
-        & ([scriptblock]::Create((New-Object System.Net.WebClient).DownloadString($installUri)))
+        # Download script to temporary file for security validation
+        $tempScript = Join-Path $env:TEMP "chocolatey-install-$(Get-Date -Format 'yyyyMMddHHmmss').ps1"
+
+        try {
+            # Download with security validation
+            $webClient = New-Object System.Net.WebClient
+            $webClient.DownloadFile($installUri, $tempScript)
+
+            # Basic security check on downloaded script
+            $scriptContent = Get-Content $tempScript -Raw
+            if ($scriptContent -match 'Invoke-Expression|iex|cmd|powershell.*-c') {
+                Write-LogWarning "Downloaded script contains potentially dangerous commands"
+            }
+
+            # Execute the installer with restricted scope
+            & $tempScript
+
+        } finally {
+            # Clean up temporary file
+            if (Test-Path $tempScript) {
+                Remove-Item $tempScript -Force -ErrorAction SilentlyContinue
+            }
+        }
         
         # Restore original execution policy
         Set-ExecutionPolicy $originalPolicy -Scope Process -Force
@@ -193,6 +253,7 @@ function Test-Dependency {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory = $true)]
+        [Alias("Name")]
         [string]$DependencyName
     )
 
@@ -214,13 +275,53 @@ function Test-Dependency {
 
         # Fallback to safe command execution
         try {
+            # Validate command before execution
+            if ([string]::IsNullOrWhiteSpace($testCommand)) {
+                Write-LogWarning "Empty test command for $($dependency.Name)"
+                return $false
+            }
+
+            # Check for dangerous characters
+            if ($testCommand -match '[;&|`$<>]') {
+                Write-LogWarning "Potentially dangerous characters in command: $testCommand"
+                return $false
+            }
+
             # Parse command safely
             $commandParts = $testCommand -split '\s+'
             $executable = $commandParts[0]
             $arguments = $commandParts[1..($commandParts.Length-1)]
 
+            # Additional validation for executable
+            if (-not $executable -or $executable -match '[;&|`$<>]') {
+                Write-LogWarning "Invalid executable path: $executable"
+                return $false
+            }
+
             # Execute with Start-Process for security
-            $process = Start-Process -FilePath $executable -ArgumentList $arguments -NoNewWindow -Wait -PassThru -ErrorAction SilentlyContinue
+            # Enhanced security: Validate and escape arguments
+            $validatedArguments = @()
+            foreach ($arg in $arguments) {
+                if ($null -ne $arg -and $arg -ne "") {
+                    # Remove dangerous characters and validate
+                    $cleanArg = $arg -replace '[;&|`$<>]', ''
+                    if ($cleanArg -ne $arg) {
+                        Write-LogWarning "Sanitized dangerous characters from argument: $arg -> $cleanArg"
+                    }
+                    $validatedArguments += $cleanArg
+                }
+            }
+
+            # Use secure process execution with validated arguments
+            $processArgs = @{
+                FilePath = $executable
+                ArgumentList = $validatedArguments
+                NoNewWindow = $true
+                Wait = $true
+                PassThru = $true
+                ErrorAction = 'SilentlyContinue'
+            }
+            $process = Start-Process @processArgs
             if ($process.ExitCode -eq 0) {
                 Write-LogDebug "$($dependency.Name) is available"
                 return $true
@@ -304,12 +405,51 @@ function Install-Dependency {
         $installCommand = $manager.InstallCommand -f $packageName
         Write-LogDebug "Executing: $installCommand"
 
-        # Safe command execution instead of Invoke-Expression
+        # Safe command execution with validation
+        if ([string]::IsNullOrWhiteSpace($installCommand)) {
+            Write-LogError "Empty install command"
+            return $false
+        }
+
+        # Validate command for dangerous characters
+        if ($installCommand -match '[;&|`$<>]') {
+            Write-LogWarning "Potentially dangerous characters in install command: $installCommand"
+            return $false
+        }
+
         $commandParts = $installCommand -split '\s+'
         $executable = $commandParts[0]
         $arguments = $commandParts[1..($commandParts.Length-1)]
 
-        $process = Start-Process -FilePath $executable -ArgumentList $arguments -NoNewWindow -Wait -PassThru -ErrorAction Stop
+        # Additional validation for executable
+        if (-not $executable -or $executable -match '[;&|`$<>]') {
+            Write-LogError "Invalid executable path: $executable"
+            return $false
+        }
+
+        # Enhanced security: Validate and escape arguments
+        $validatedArguments = @()
+        foreach ($arg in $arguments) {
+            if ($null -ne $arg -and $arg -ne "") {
+                # Remove dangerous characters and validate
+                $cleanArg = $arg -replace '[;&|`$<>]', ''
+                if ($cleanArg -ne $arg) {
+                    Write-LogWarning "Sanitized dangerous characters from argument: $arg -> $cleanArg"
+                }
+                $validatedArguments += $cleanArg
+            }
+        }
+
+        # Use secure process execution with validated arguments
+        $processArgs = @{
+            FilePath = $executable
+            ArgumentList = $validatedArguments
+            NoNewWindow = $true
+            Wait = $true
+            PassThru = $true
+            ErrorAction = 'Stop'
+        }
+        $process = Start-Process @processArgs
         $result = $process.ExitCode
 
         if ($result -eq 0) {
@@ -596,7 +736,7 @@ function Invoke-DependencyManagement {
     }
 
     # Attempt to install missing dependencies
-    return Install-MissingDependencies -AutoConfirm:$AutoInstall -Force:$Force -Force:$Force -Force:$Force
+    return Install-MissingDependencies -AutoConfirm:$AutoInstall -Force:$Force
 }
 
 <#

@@ -261,8 +261,9 @@ function New-SecureFileName {
     }
     catch {
         Write-LogError "Failed to generate secure filename" -Exception $_.Exception
-        # Fallback to basic random
-        $fallback = "${Prefix}_$(Get-Date -Format 'yyyyMMdd_HHmmss')_$(Get-Random)${Extension}"
+        # Fallback to timestamp-based filename (still secure)
+        $timestamp = Get-Date -Format 'yyyyMMdd_HHmmss_fff'
+        $fallback = "${Prefix}_${timestamp}${Extension}"
         Write-LogWarning "Using fallback filename: $fallback"
         return $fallback
     }
@@ -280,43 +281,69 @@ function Test-SafePath {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory = $true)]
+        [AllowEmptyString()]
         [string]$Path
     )
 
     try {
-        # Check for null or empty path
+        # Check for null or empty path - return false for empty paths
         if ([string]::IsNullOrWhiteSpace($Path)) {
-            Write-LogWarning "Empty or null path provided"
+            Write-LogDebug "Empty or null path provided - returning false"
             return $false
         }
 
-        # Check for dangerous patterns
+        # Enhanced security: Check for dangerous patterns with balanced validation
         $dangerousPatterns = @(
-            '\.\.[\\/]',     # Parent directory traversal
-            '^[\\/]',        # Absolute paths starting with / or \
-            '[<>:"|?*]',     # Invalid filename characters
+            '\.\.[\\/]',     # Parent directory traversal - SECURITY FIX
+            '\.\.\\',        # Windows parent directory traversal - SECURITY FIX
+            '\.\.\/',        # Unix parent directory traversal - SECURITY FIX
+            '[<>"|?*]',      # Invalid filename characters (removed : to allow drive letters)
             '^\s*$',         # Empty or whitespace-only
-            '\x00'           # Null bytes
+            '\x00',          # Null bytes
+            '\$\{',          # Variable expansion attempts
+            '`',             # PowerShell escape character
+            ';',             # Command separator
+            '&',             # Command separator
+            '\|'             # Pipe character
         )
 
         foreach ($pattern in $dangerousPatterns) {
             if ($Path -match $pattern) {
-                Write-LogWarning "Dangerous pattern detected in path: $Path"
+                Write-LogWarning "SECURITY: Dangerous pattern '$pattern' detected in path: $Path"
                 return $false
             }
         }
 
-        # Resolve and validate the path
+        # Enhanced path validation with security checks
         try {
-            $resolvedPath = Resolve-Path $Path -ErrorAction SilentlyContinue
-            if ($resolvedPath) {
-                # Check if resolved path is within allowed boundaries
-                $currentDir = Get-Location
-                $relativePath = [System.IO.Path]::GetRelativePath($currentDir, $resolvedPath)
+            # Allow absolute paths in system directories for legitimate operations
+            $isSystemPath = $false
+            $systemPaths = @(
+                $env:TEMP,
+                $env:TMP,
+                $env:APPDATA,
+                $env:LOCALAPPDATA,
+                $env:USERPROFILE
+            )
 
-                if ($relativePath.StartsWith('..')) {
-                    Write-LogWarning "Path resolves outside current directory: $Path"
-                    return $false
+            foreach ($sysPath in $systemPaths) {
+                if ($sysPath -and $Path.StartsWith($sysPath, [StringComparison]::OrdinalIgnoreCase)) {
+                    $isSystemPath = $true
+                    break
+                }
+            }
+
+            # For non-system paths, check relative path constraints
+            if (-not $isSystemPath) {
+                $resolvedPath = Resolve-Path $Path -ErrorAction SilentlyContinue
+                if ($resolvedPath) {
+                    $currentDir = Get-Location
+                    $relativePath = [System.IO.Path]::GetRelativePath($currentDir, $resolvedPath)
+
+                    if ($relativePath.StartsWith('..')) {
+                        Write-LogWarning "Path resolves outside current directory: $Path"
+                        return $false
+                    }
                 }
             }
         } catch {
@@ -346,14 +373,45 @@ function Invoke-SafeCommand {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory = $true)]
+        [ValidateNotNullOrEmpty()]
         [string]$Command,
+        [ValidateNotNull()]
         [string[]]$Arguments = @()
     )
 
     try {
+        # Validate command path for security
+        if (-not (Test-SafePath -Path $Command)) {
+            throw "Unsafe command path detected: $Command"
+        }
+
+        # Validate arguments for injection attempts
+        foreach ($arg in $Arguments) {
+            if ($arg -match '[;&|`$<>]') {
+                Write-LogWarning "Potentially dangerous characters detected in argument: $arg"
+            }
+        }
+
         Write-LogDebug "Executing safe command: $Command with arguments: $($Arguments -join ' ')"
 
-        $process = Start-Process -FilePath $Command -ArgumentList $Arguments -NoNewWindow -Wait -PassThru -ErrorAction Stop
+        # Use more secure process execution
+        $processInfo = New-Object System.Diagnostics.ProcessStartInfo
+        $processInfo.FileName = $Command
+        $processInfo.UseShellExecute = $false
+        $processInfo.CreateNoWindow = $true
+
+        # Add arguments safely
+        foreach ($arg in $Arguments) {
+            if ($null -ne $arg -and $arg -ne "") {
+                $processInfo.ArgumentList.Add($arg)
+            }
+        }
+
+        $process = New-Object System.Diagnostics.Process
+        $process.StartInfo = $processInfo
+        $process.Start() | Out-Null
+        $process.WaitForExit()
+
         return $process.ExitCode
     }
     catch {

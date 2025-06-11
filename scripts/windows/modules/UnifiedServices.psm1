@@ -32,10 +32,24 @@ function Initialize-UnifiedServices {
             return $false
         }
         
-        # Set common scripts path using safe path resolution
-        $script:CommonScriptsPath = Resolve-Path (Join-Path $PSScriptRoot "..\..\common") -ErrorAction SilentlyContinue
+        # SECURITY FIX: Set common scripts path using safe path resolution with validation
+        $relativePath = "..\..\common"
+        # Validate the relative path doesn't contain dangerous traversal patterns
+        if ($relativePath -match '\.\.[\\/].*\.\.[\\/]') {
+            Write-LogWarning "SECURITY: Potentially dangerous path traversal detected in: $relativePath"
+            return $false
+        }
+
+        $script:CommonScriptsPath = Resolve-Path (Join-Path $PSScriptRoot $relativePath) -ErrorAction SilentlyContinue
         if (-not $script:CommonScriptsPath -or -not (Test-Path $script:CommonScriptsPath)) {
             Write-LogWarning "Common scripts path not found or invalid: $script:CommonScriptsPath"
+            return $false
+        }
+
+        # Additional security check: Ensure resolved path is within expected boundaries
+        $expectedBasePath = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
+        if (-not $script:CommonScriptsPath.Path.StartsWith($expectedBasePath)) {
+            Write-LogWarning "SECURITY: Resolved path is outside expected boundaries: $($script:CommonScriptsPath.Path)"
             return $false
         }
         

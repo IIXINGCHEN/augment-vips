@@ -89,11 +89,15 @@ function New-FileBackup {
     param(
         [Parameter(Mandatory = $true)]
         [string]$FilePath,
+        [string]$BackupDirectory = "",
         [string]$Description = ""
     )
-    
-    if (-not $script:BackupDirectory) {
-        throw "Backup manager not initialized. Call Initialize-BackupManager first."
+
+    # Use provided backup directory or fall back to initialized one
+    $targetBackupDir = if ($BackupDirectory) { $BackupDirectory } else { $script:BackupDirectory }
+
+    if (-not $targetBackupDir) {
+        throw "Backup directory not specified. Provide BackupDirectory parameter or call Initialize-BackupManager first."
     }
     
     # Validate path security
@@ -112,14 +116,14 @@ function New-FileBackup {
         $fileName = [System.IO.Path]::GetFileName($FilePath)
         $secureFileName = New-SecureFileName -Prefix "backup" -Extension ".backup"
         $backupFileName = "${secureFileName}_${fileName}"
-        $backupPath = Join-Path $script:BackupDirectory $backupFileName
+        $backupPath = Join-Path $targetBackupDir $backupFileName
 
         # Ensure unique filename with secure random suffix
         $counter = 1
         while (Test-Path $backupPath) {
             $additionalRandom = New-SecureHexString -Length 8
             $backupFileName = "${secureFileName}_${additionalRandom}_${fileName}"
-            $backupPath = Join-Path $script:BackupDirectory $backupFileName
+            $backupPath = Join-Path $targetBackupDir $backupFileName
             $counter++
 
             # Prevent infinite loop
@@ -312,15 +316,20 @@ function Test-BackupIntegrity {
 #>
 function Get-BackupFiles {
     [CmdletBinding()]
-    param()
+    param(
+        [string]$BackupDirectory = ""
+    )
 
-    if (-not $script:BackupDirectory -or -not (Test-Path $script:BackupDirectory)) {
-        Write-LogWarning "Backup directory not found or not initialized"
+    # Use provided backup directory or fall back to initialized one
+    $targetBackupDir = if ($BackupDirectory) { $BackupDirectory } else { $script:BackupDirectory }
+
+    if (-not $targetBackupDir -or -not (Test-Path $targetBackupDir)) {
+        Write-LogWarning "Backup directory not found or not initialized: $targetBackupDir"
         return @()
     }
     
     try {
-        $backupFiles = Get-ChildItem -Path $script:BackupDirectory -Filter "*.backup" | Sort-Object CreationTime -Descending
+        $backupFiles = Get-ChildItem -Path $targetBackupDir -Filter "*.backup" | Sort-Object CreationTime -Descending
         $backupInfos = @()
         
         foreach ($file in $backupFiles) {

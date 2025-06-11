@@ -286,6 +286,7 @@ function Assert-AdminPrivileges {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory = $true)]
+        [ValidateNotNullOrEmpty()]
         [string]$OperationName,
         [switch]$AllowContinue
     )
@@ -335,10 +336,17 @@ function Test-WriteAccess {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory = $true)]
+        [ValidateNotNullOrEmpty()]
         [string]$Path
     )
 
     try {
+        # SECURITY FIX: Enhanced input validation
+        if (-not (Test-SafePath -Path $Path)) {
+            Write-LogWarning "SECURITY: Unsafe path detected: $Path"
+            return $false
+        }
+
         # Ensure the directory exists
         $directory = if (Test-Path $Path -PathType Container) {
             $Path
@@ -352,7 +360,13 @@ function Test-WriteAccess {
         }
 
         # Try to create a temporary file to test write access
-        $testFile = Join-Path $directory "write_test_$(Get-Random).tmp"
+        # Use secure random number generation
+        $randomBytes = New-Object byte[] 8
+        $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+        $rng.GetBytes($randomBytes)
+        $rng.Dispose()
+        $randomHex = [System.BitConverter]::ToString($randomBytes) -replace '-', ''
+        $testFile = Join-Path $directory "write_test_$randomHex.tmp"
 
         try {
             "test" | Out-File -FilePath $testFile -Force
