@@ -884,10 +884,9 @@ if ($result.Success) {
 Set-VSCodeTelemetryIds -StorageJsonPath <string> -CreateBackup <bool> -IdTypes <string[]>
 Set-VSCodeTelemetryIdsMultiple -StorageJsonPaths <string[]> -CreateBackup <bool> -IdTypes <string[]>
 
-# ID生成
-New-TelemetryId -Type <string> -Length <int>    # 生成新的遥测ID
-New-SecureHexString -Length <int>               # 生成安全十六进制字符串
-New-SecureUUID                                  # 生成安全UUID
+# ID生成 (统一接口)
+New-UnifiedSecureId -IdType <string> -Length <int>  # 统一安全ID生成服务
+# 支持的IdType: "hex", "uuid", "machineId", "deviceId", "sqmId", "sessionId", "instanceId"
 
 # 验证和预览
 Test-StorageJsonValidity -StorageJsonPath <string>                           # 验证storage.json

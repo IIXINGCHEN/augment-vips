@@ -6,12 +6,36 @@
 # Author: Augment VIP Project
 # Version: 1.0.0
 
-# Import Logger module for consistent logging
+# Import required modules for consistent logging and ID generation
 Import-Module (Join-Path $PSScriptRoot "Logger.psm1") -Force
+Import-Module (Join-Path $PSScriptRoot "UnifiedServices.psm1") -Force
 
-# Module variables for configuration caching
+# Module variables for configuration caching and optimization
 $script:ConfigCache = $null
 $script:ConfigLastModified = $null
+$script:GlobalConfigInstance = $null
+
+# Configuration access optimization
+function Get-GlobalConfig {
+    [CmdletBinding()]
+    param()
+
+    if ($script:GlobalConfigInstance -eq $null) {
+        $script:GlobalConfigInstance = Get-Configuration
+    }
+    return $script:GlobalConfigInstance
+}
+
+# Clear configuration cache (useful for testing)
+function Clear-ConfigCache {
+    [CmdletBinding()]
+    param()
+
+    $script:ConfigCache = $null
+    $script:ConfigLastModified = $null
+    $script:GlobalConfigInstance = $null
+    Write-LogDebug "Configuration cache cleared"
+}
 
 # Common VS Code paths configuration
 $script:VSCodePaths = @{
@@ -40,84 +64,9 @@ $script:VSCodePaths = @{
     )
 }
 
-<#
-.SYNOPSIS
-    Generates a cryptographically secure UUID (Version 4)
-.DESCRIPTION
-    Creates a RFC 4122 compliant UUID v4 using cryptographically secure random number generation
-.OUTPUTS
-    string - Secure UUID
-#>
-function New-SecureUUID {
-    [CmdletBinding()]
-    param()
-
-    try {
-        # Generate random bytes for UUID
-        $bytes = New-Object byte[] 16
-        $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
-        $rng.GetBytes($bytes)
-        $rng.Dispose()
-        
-        # Set version (4) and variant bits according to RFC 4122
-        $bytes[6] = ($bytes[6] -band 0x0F) -bor 0x40  # Version 4
-        $bytes[8] = ($bytes[8] -band 0x3F) -bor 0x80  # Variant 10
-        
-        # Format as UUID string
-        $uuid = [System.Guid]::new($bytes).ToString()
-        Write-LogDebug "Generated secure UUID: $uuid"
-        return $uuid
-    }
-    catch {
-        Write-LogError "Failed to generate secure UUID" -Exception $_.Exception
-        # Fallback to .NET Guid if crypto fails
-        $fallbackUuid = [System.Guid]::NewGuid().ToString()
-        Write-LogWarning "Using fallback UUID generation: $fallbackUuid"
-        return $fallbackUuid
-    }
-}
-
-<#
-.SYNOPSIS
-    Generates a cryptographically secure hexadecimal string
-.PARAMETER Length
-    Length of the hex string to generate
-.OUTPUTS
-    string - Secure hex string
-#>
-function New-SecureHexString {
-    [CmdletBinding()]
-    param(
-        [Parameter(Mandatory = $true)]
-        [int]$Length
-    )
-    
-    if ($Length -le 0) {
-        throw "Length must be greater than 0"
-    }
-    
-    try {
-        # Calculate number of bytes needed (2 hex chars per byte)
-        $byteCount = [Math]::Ceiling($Length / 2)
-        
-        # Generate random bytes using cryptographically secure RNG
-        $bytes = New-Object byte[] $byteCount
-        $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
-        $rng.GetBytes($bytes)
-        $rng.Dispose()
-        
-        # Convert to hex string and trim to exact length
-        $hexString = [System.BitConverter]::ToString($bytes).Replace("-", "").ToLower()
-        $result = $hexString.Substring(0, [Math]::Min($hexString.Length, $Length))
-        
-        Write-LogDebug "Generated secure hex string of length: $($result.Length)"
-        return $result
-    }
-    catch {
-        Write-LogError "Failed to generate secure hex string" -Exception $_.Exception
-        throw
-    }
-}
+# Note: New-SecureUUID and New-SecureHexString functions removed to eliminate code duplication
+# Use New-UnifiedSecureId from UnifiedServices.psm1 for all ID generation needs
+# This provides consistent, secure ID generation with automatic fallback mechanisms
 
 <#
 .SYNOPSIS
@@ -250,12 +199,13 @@ function New-SecureFileName {
         [string]$Prefix = "temp",
         [string]$Extension = ".tmp"
     )
-    
+
     try {
         $timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
-        $randomPart = New-SecureHexString -Length 16
+        # Use unified service for consistent ID generation
+        $randomPart = New-UnifiedSecureId -IdType "hex" -Length 16
         $filename = "${Prefix}_${timestamp}_${randomPart}${Extension}"
-        
+
         Write-LogDebug "Generated secure filename: $filename"
         return $filename
     }
@@ -422,10 +372,10 @@ function Invoke-SafeCommand {
 
 # Export module functions
 Export-ModuleMember -Function @(
-    'New-SecureUUID',
-    'New-SecureHexString',
     'Get-VSCodePaths',
     'Get-Configuration',
+    'Get-GlobalConfig',
+    'Clear-ConfigCache',
     'Invoke-SafeOperation',
     'New-SecureFileName',
     'Test-SafePath',

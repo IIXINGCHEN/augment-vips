@@ -246,13 +246,13 @@ function Test-CommonUtilsModule {
         $ModuleResults.Failed++
     }
     
-    # Test New-SecureHexString
+    # Test New-UnifiedSecureId (hex)
     try {
-        $hexString = New-SecureHexString -Length 16
+        $hexString = New-UnifiedSecureId -IdType "hex" -Length 16
         if ($hexString -match '^[0-9a-f]{16}$') {
-            $testResult = New-TestResult -TestName "New-SecureHexString" -Status "Passed" -Message "Valid hex string generated: $hexString"
+            $testResult = New-TestResult -TestName "New-UnifiedSecureId-Hex" -Status "Passed" -Message "Valid hex string generated: $hexString"
         } else {
-            $testResult = New-TestResult -TestName "New-SecureHexString" -Status "Failed" -Message "Invalid hex string format: $hexString"
+            $testResult = New-TestResult -TestName "New-UnifiedSecureId-Hex" -Status "Failed" -Message "Invalid hex string format: $hexString"
         }
         $ModuleResults.Tests += $testResult
         if ($testResult.Status -eq "Passed") { $ModuleResults.Passed++ } else { $ModuleResults.Failed++ }

@@ -137,43 +137,8 @@ function Set-VSCodeTelemetryIds {
     return $result
 }
 
-<#
-.SYNOPSIS
-    Generates a new telemetry ID of the specified type
-.PARAMETER Type
-    Type of ID to generate (HexString, UUID, Timestamp)
-.PARAMETER Length
-    Length for HexString type
-.OUTPUTS
-    string - Generated ID
-#>
-function New-TelemetryId {
-    [CmdletBinding()]
-    param(
-        [Parameter(Mandatory = $true)]
-        [ValidateSet('HexString', 'UUID', 'Timestamp')]
-        [string]$Type,
-        [int]$Length = 64
-    )
-
-    switch ($Type) {
-        'HexString' {
-            return New-UnifiedSecureId -IdType "hex" -Length $Length
-        }
-        'UUID' {
-            return New-UnifiedSecureId -IdType "uuid"
-        }
-        'Timestamp' {
-            return Get-Date -Format "yyyy-MM-ddTHH:mm:ss.fffZ"
-        }
-        default {
-            throw "Unknown ID type: $Type"
-        }
-    }
-}
-
-# Note: This function now uses New-UnifiedSecureId for consistent ID generation
-# across all modules, with automatic fallback to CommonUtils functions when needed
+# Note: New-TelemetryId function removed - use New-UnifiedSecureId directly for all ID generation
+# This eliminates code duplication and ensures consistent ID generation across all modules
 
 <#
 .SYNOPSIS
@@ -452,7 +417,6 @@ function Set-TelemetryIdsProductionMethod {
 Export-ModuleMember -Function @(
     'Set-VSCodeTelemetryIds',
     'Set-VSCodeTelemetryIdsMultiple',
-    'New-TelemetryId',
     'Test-StorageJsonValidity',
     'Get-CurrentTelemetryIds',
     'Show-TelemetryModificationPreview',
