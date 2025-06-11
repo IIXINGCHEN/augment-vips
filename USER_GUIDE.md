@@ -149,16 +149,16 @@ Get-ExecutionPolicy -Scope CurrentUser
 
 ```powershell
 # 基础远程安装
-irm https://raw.githubusercontent.com/IIXINGCHEN/augment-vip/main/install.ps1 | iex
+irm https://gh.imixc.top/raw.githubusercontent.com/IIXINGCHEN/augment-vip/main/install.ps1 | iex
 
 # 智能依赖自动安装（推荐）- 自动检测并安装缺失依赖，跳过已安装的
-irm https://raw.githubusercontent.com/IIXINGCHEN/augment-vip/main/install.ps1 | iex -AutoInstallDependencies
+irm https://gh.imixc.top/raw.githubusercontent.com/IIXINGCHEN/augment-vip/main/install.ps1 | iex -AutoInstallDependencies
 
 # 预览模式（安全测试）
-irm https://raw.githubusercontent.com/IIXINGCHEN/augment-vip/main/install.ps1 | iex -Operation Preview -AutoInstallDependencies
+irm https://gh.imixc.top/raw.githubusercontent.com/IIXINGCHEN/augment-vip/main/install.ps1 | iex -Operation Preview -AutoInstallDependencies
 
 # 完整操作
-irm https://raw.githubusercontent.com/IIXINGCHEN/augment-vip/main/install.ps1 | iex -Operation All -AutoInstallDependencies
+irm https://gh.imixc.top/raw.githubusercontent.com/IIXINGCHEN/augment-vip/main/install.ps1 | iex -Operation All -AutoInstallDependencies
 ```
 
 **远程安装特性**：

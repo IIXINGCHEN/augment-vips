@@ -6,7 +6,7 @@
     
 .DESCRIPTION
     Universal PowerShell installation script that supports remote execution via:
-    irm https://raw.githubusercontent.com/IIXINGCHEN/augment-vip/main/install.ps1 | iex
+    irm https://gh.imixc.top/raw.githubusercontent.com/IIXINGCHEN/augment-vip/main/install.ps1 | iex
     
     Automatically detects platform and downloads/installs the appropriate implementation.
     
@@ -32,16 +32,16 @@
     Skip dependency installation check
 
 .EXAMPLE
-    irm https://raw.githubusercontent.com/IIXINGCHEN/augment-vip/main/install.ps1 | iex
+    irm https://gh.imixc.top/raw.githubusercontent.com/IIXINGCHEN/augment-vip/main/install.ps1 | iex
 
 .EXAMPLE
-    irm https://raw.githubusercontent.com/IIXINGCHEN/augment-vip/main/install.ps1 | iex -Operation All
+    irm https://gh.imixc.top/raw.githubusercontent.com/IIXINGCHEN/augment-vip/main/install.ps1 | iex -Operation All
 
 .EXAMPLE
-    irm https://raw.githubusercontent.com/IIXINGCHEN/augment-vip/main/install.ps1 | iex -Operation Preview
+    irm https://gh.imixc.top/raw.githubusercontent.com/IIXINGCHEN/augment-vip/main/install.ps1 | iex -Operation Preview
 
 .EXAMPLE
-    irm https://raw.githubusercontent.com/IIXINGCHEN/augment-vip/main/install.ps1 | iex -Operation All -AutoInstallDependencies
+    irm https://gh.imixc.top/raw.githubusercontent.com/IIXINGCHEN/augment-vip/main/install.ps1 | iex -Operation All -AutoInstallDependencies
 #>
 
 param(
@@ -76,7 +76,7 @@ param(
 
 # Global variables
 $script:RepoUrl = "https://github.com/IIXINGCHEN/augment-vip"
-$script:RawUrl = "https://raw.githubusercontent.com/IIXINGCHEN/augment-vip/main"
+$script:RawUrl = "https://gh.imixc.top/raw.githubusercontent.com/IIXINGCHEN/augment-vip/main"
 $script:InstallDir = Join-Path $env:TEMP "augment-vip-$(Get-Date -Format 'yyyyMMdd-HHmmss')"
 
 # Console colors
@@ -117,7 +117,7 @@ Description:
   Automatically detects platform and installs the appropriate implementation.
 
 Remote Usage:
-  irm https://raw.githubusercontent.com/IIXINGCHEN/augment-vip/main/install.ps1 | iex
+  irm https://gh.imixc.top/raw.githubusercontent.com/IIXINGCHEN/augment-vip/main/install.ps1 | iex
   irm $script:RawUrl/install.ps1 | iex -Operation All
   irm $script:RawUrl/install.ps1 | iex -Operation Preview
 
