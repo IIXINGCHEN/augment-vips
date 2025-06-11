@@ -155,13 +155,13 @@ function New-TelemetryId {
         [string]$Type,
         [int]$Length = 64
     )
-    
+
     switch ($Type) {
         'HexString' {
-            return New-SecureHexString -Length $Length
+            return New-UnifiedSecureId -IdType "hex" -Length $Length
         }
         'UUID' {
-            return New-SecureUUID
+            return New-UnifiedSecureId -IdType "uuid"
         }
         'Timestamp' {
             return Get-Date -Format "yyyy-MM-ddTHH:mm:ss.fffZ"
@@ -172,8 +172,8 @@ function New-TelemetryId {
     }
 }
 
-# Note: New-SecureHexString and New-SecureUUID functions have been moved to CommonUtils.psm1
-# to eliminate code duplication and provide unified ID generation across all modules
+# Note: This function now uses New-UnifiedSecureId for consistent ID generation
+# across all modules, with automatic fallback to CommonUtils functions when needed
 
 <#
 .SYNOPSIS
@@ -445,8 +445,8 @@ function Set-TelemetryIdsProductionMethod {
     }
 }
 
-# Removed redundant functions New-RandomId and New-UUIDv4
-# Use New-SecureHexString and New-SecureUUID instead for better security
+# All ID generation now uses New-UnifiedSecureId for consistency and reliability
+# with automatic fallback to secure implementations when unified services are unavailable
 
 # Export module functions
 Export-ModuleMember -Function @(
