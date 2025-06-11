@@ -288,14 +288,47 @@ function Install-Repository {
         Write-Info "Using git to clone repository..."
         try {
             Push-Location $script:InstallDir
-            git clone $script:RepoUrl . 2>&1 | Out-Null
+            Write-Info "Cloning from: $script:RepoUrl"
+            Write-Info "Target directory: $script:InstallDir"
+
+            $gitOutput = git clone $script:RepoUrl . 2>&1
+            $gitExitCode = $LASTEXITCODE
+
             Pop-Location
-            Write-Success "Repository cloned successfully"
-            return $true
+
+            if ($gitExitCode -eq 0) {
+                Write-Success "Repository cloned successfully"
+
+                # Verify critical files exist
+                $criticalFiles = @("scripts\augment-vip-launcher.ps1", "config\config.json")
+                $missingFiles = @()
+
+                foreach ($file in $criticalFiles) {
+                    $fullPath = Join-Path $script:InstallDir $file
+                    if (-not (Test-Path $fullPath)) {
+                        $missingFiles += $file
+                    }
+                }
+
+                if ($missingFiles.Count -gt 0) {
+                    Write-Warning "Git clone completed but some critical files are missing:"
+                    foreach ($missing in $missingFiles) {
+                        Write-Warning "  - $missing"
+                    }
+                    Write-Warning "Falling back to download method"
+                } else {
+                    return $true
+                }
+            } else {
+                Write-Warning "Git clone failed with exit code: $gitExitCode"
+                Write-Warning "Git output: $($gitOutput -join "`n")"
+                Write-Warning "Falling back to download method"
+            }
         }
         catch {
             Pop-Location
-            Write-Warning "Git clone failed, falling back to download method"
+            Write-Warning "Git clone failed with exception: $($_.Exception.Message)"
+            Write-Warning "Falling back to download method"
         }
     }
     
