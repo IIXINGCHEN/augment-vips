@@ -130,8 +130,31 @@ $dependencies = @{
 
 foreach ($dep in $dependencies.GetEnumerator()) {
     try {
-        $result = Invoke-Expression $dep.Value 2>$null
-        Write-Host "✅ $($dep.Key): Available" -ForegroundColor Green
+        # Safe command execution instead of Invoke-Expression
+        $command = $dep.Value.Split(' ')[0]
+        $arguments = $dep.Value.Split(' ')[1..999]
+
+        $processInfo = New-Object System.Diagnostics.ProcessStartInfo
+        $processInfo.FileName = $command
+        $processInfo.UseShellExecute = $false
+        $processInfo.CreateNoWindow = $true
+        $processInfo.RedirectStandardOutput = $true
+        $processInfo.RedirectStandardError = $true
+
+        foreach ($arg in $arguments) {
+            if ($arg) { $processInfo.ArgumentList.Add($arg) }
+        }
+
+        $process = New-Object System.Diagnostics.Process
+        $process.StartInfo = $processInfo
+        $process.Start() | Out-Null
+        $process.WaitForExit()
+
+        if ($process.ExitCode -eq 0) {
+            Write-Host "✅ $($dep.Key): Available" -ForegroundColor Green
+        } else {
+            Write-Host "❌ $($dep.Key): Missing - 使用 -AutoInstallDependencies 自动安装" -ForegroundColor Red
+        }
     } catch {
         Write-Host "❌ $($dep.Key): Missing - 使用 -AutoInstallDependencies 自动安装" -ForegroundColor Red
     }
