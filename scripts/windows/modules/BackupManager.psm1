@@ -9,6 +9,9 @@
 # Import Logger module
 Import-Module (Join-Path $PSScriptRoot "Logger.psm1") -Force
 
+# Import CommonUtils module
+Import-Module (Join-Path $PSScriptRoot "CommonUtils.psm1") -Force
+
 # Backup information class
 class BackupInfo {
     [string]$OriginalPath
@@ -98,28 +101,54 @@ function New-FileBackup {
     }
     
     try {
-        # Generate backup filename with timestamp and random suffix to prevent conflicts
-        $timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
-        $randomSuffix = Get-Random -Minimum 1000 -Maximum 9999
+        # Generate secure backup filename using cryptographically secure random
         $fileName = [System.IO.Path]::GetFileName($FilePath)
-        $backupFileName = "${timestamp}_${randomSuffix}_${fileName}.backup"
+        $secureFileName = New-SecureFileName -Prefix "backup" -Extension ".backup"
+        $backupFileName = "${secureFileName}_${fileName}"
         $backupPath = Join-Path $script:BackupDirectory $backupFileName
 
-        # Ensure unique filename
+        # Ensure unique filename with secure random suffix
         $counter = 1
         while (Test-Path $backupPath) {
-            $backupFileName = "${timestamp}_${randomSuffix}_${counter}_${fileName}.backup"
+            $additionalRandom = New-SecureHexString -Length 8
+            $backupFileName = "${secureFileName}_${additionalRandom}_${fileName}"
             $backupPath = Join-Path $script:BackupDirectory $backupFileName
             $counter++
+
+            # Prevent infinite loop
+            if ($counter -gt 100) {
+                throw "Unable to generate unique backup filename after 100 attempts"
+            }
         }
         
         # Create backup info object
         $backupInfo = [BackupInfo]::new($FilePath, $backupPath)
         $backupInfo.Description = $Description
         
-        # Copy file
+        # Copy file with secure permissions
         Copy-Item -Path $FilePath -Destination $backupPath -Force
-        
+
+        # Set secure file permissions (owner only)
+        try {
+            $acl = Get-Acl $backupPath
+            $acl.SetAccessRuleProtection($true, $false)  # Remove inherited permissions
+
+            # Add full control for current user only
+            $currentUser = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
+            $accessRule = New-Object System.Security.AccessControl.FileSystemAccessRule(
+                $currentUser,
+                "FullControl",
+                "Allow"
+            )
+            $acl.SetAccessRule($accessRule)
+            Set-Acl -Path $backupPath -AclObject $acl
+
+            Write-LogDebug "Set secure permissions on backup file: $backupPath"
+        }
+        catch {
+            Write-LogWarning "Failed to set secure permissions on backup file" -Exception $_.Exception
+        }
+
         # Calculate file hash and size
         $fileInfo = Get-Item $backupPath
         $backupInfo.Size = $fileInfo.Length
@@ -130,16 +159,18 @@ function New-FileBackup {
             $backupInfo.IsValid = Test-BackupIntegrity -BackupInfo $backupInfo
             
             if ($backupInfo.IsValid) {
+                Show-SuccessMessage "Backup created successfully: $(Split-Path $backupPath -Leaf)"
                 Write-LogSuccess "Created backup: $backupPath"
-                
+
                 # Save backup metadata
                 Save-BackupMetadata -BackupInfo $backupInfo
-                
+
                 return $backupInfo
             }
             else {
+                Show-ErrorMessage "Backup verification failed"
                 Write-LogError "Backup verification failed: $backupPath"
-                Remove-Item $backupPath -Force -ErrorAction SilentlyContinue
+                Remove-SecureFile -FilePath $backupPath
                 return $null
             }
         }
@@ -441,6 +472,63 @@ function Show-BackupStatistics {
     Write-LogInfo "========================"
 }
 
+<#
+.SYNOPSIS
+    Securely deletes a file by overwriting it before deletion
+.PARAMETER FilePath
+    Path to the file to securely delete
+.PARAMETER Passes
+    Number of overwrite passes (default: 3)
+#>
+function Remove-SecureFile {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$FilePath,
+        [int]$Passes = 3
+    )
+
+    if (-not (Test-Path $FilePath)) {
+        Write-LogDebug "File does not exist, no secure deletion needed: $FilePath"
+        return
+    }
+
+    try {
+        $fileInfo = Get-Item $FilePath
+        $fileSize = $fileInfo.Length
+
+        Write-LogDebug "Securely deleting file: $FilePath (Size: $fileSize bytes)"
+
+        # Overwrite file content multiple times
+        for ($pass = 1; $pass -le $Passes; $pass++) {
+            Write-LogDebug "Secure deletion pass $pass of $Passes"
+
+            # Generate random data for overwriting
+            $randomBytes = New-Object byte[] $fileSize
+            $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+            $rng.GetBytes($randomBytes)
+            $rng.Dispose()
+
+            # Overwrite file
+            [System.IO.File]::WriteAllBytes($FilePath, $randomBytes)
+        }
+
+        # Final deletion
+        Remove-Item $FilePath -Force
+        Write-LogDebug "File securely deleted: $FilePath"
+    }
+    catch {
+        Write-LogWarning "Failed to securely delete file: $FilePath" -Exception $_.Exception
+        # Fallback to normal deletion
+        try {
+            Remove-Item $FilePath -Force -ErrorAction SilentlyContinue
+        }
+        catch {
+            Write-LogError "Failed to delete file even with fallback method: $FilePath"
+        }
+    }
+}
+
 # Export module functions
 Export-ModuleMember -Function @(
     'Initialize-BackupManager',
@@ -449,5 +537,6 @@ Export-ModuleMember -Function @(
     'Test-BackupIntegrity',
     'Get-BackupFiles',
     'Clear-OldBackups',
-    'Show-BackupStatistics'
+    'Show-BackupStatistics',
+    'Remove-SecureFile'
 )

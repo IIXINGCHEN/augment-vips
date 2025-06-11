@@ -34,7 +34,24 @@
         "level": "Info",
         "enableConsole": true,
         "enableFile": true,
-        "directory": "./logs"
+        "directory": "./logs",
+        "enableSensitiveFiltering": true,
+        "maxLogFileSize": "10MB",
+        "maxLogFiles": 5
+    },
+    "security": {
+        "requireAdminPrivileges": false,
+        "allowContinueWithoutAdmin": true,
+        "enableSQLInjectionProtection": true,
+        "enableSecureFileHandling": true,
+        "backupFilePermissions": "OwnerOnly",
+        "secureDeletePasses": 3,
+        "enableDependencyVerification": true,
+        "trustedPackageManagers": [
+            "chocolatey",
+            "scoop",
+            "winget"
+        ]
     },
     "cleaning": {
         "augmentPatterns": [

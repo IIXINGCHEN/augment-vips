@@ -9,6 +9,7 @@
 # Import required modules
 Import-Module (Join-Path $PSScriptRoot "Logger.psm1") -Force
 Import-Module (Join-Path $PSScriptRoot "BackupManager.psm1") -Force
+Import-Module (Join-Path $PSScriptRoot "CommonUtils.psm1") -Force
 
 # Cleaning patterns for different data types
 $script:AugmentPatterns = @(
@@ -37,16 +38,92 @@ function Get-SafeSQLPattern {
         [string]$Pattern
     )
 
-    # Remove or escape dangerous characters
-    $sanitized = $Pattern.Replace("'", "''")  # Escape single quotes
-    $sanitized = $sanitized.Replace(";", "")   # Remove semicolons
-    $sanitized = $sanitized.Replace("--", "")  # Remove SQL comments
-    $sanitized = $sanitized.Replace("/*", "")  # Remove block comments
-    $sanitized = $sanitized.Replace("*/", "")  # Remove block comments
-    $sanitized = $sanitized.Replace("xp_", "")  # Remove extended procedures
-    $sanitized = $sanitized.Replace("sp_", "")  # Remove stored procedures
+    # Enhanced SQL injection prevention
+    $sanitized = $Pattern
 
+    # Remove or escape dangerous characters
+    $sanitized = $sanitized.Replace("'", "''")     # Escape single quotes
+    $sanitized = $sanitized.Replace(";", "")       # Remove semicolons
+    $sanitized = $sanitized.Replace("--", "")      # Remove SQL comments
+    $sanitized = $sanitized.Replace("/*", "")      # Remove block comments
+    $sanitized = $sanitized.Replace("*/", "")      # Remove block comments
+    $sanitized = $sanitized.Replace("xp_", "")     # Remove extended procedures
+    $sanitized = $sanitized.Replace("sp_", "")     # Remove stored procedures
+
+    # Additional security measures
+    $sanitized = $sanitized.Replace("`"", "")      # Remove backticks
+    $sanitized = $sanitized.Replace("[", "")       # Remove square brackets
+    $sanitized = $sanitized.Replace("]", "")       # Remove square brackets
+    $sanitized = $sanitized.Replace("UNION", "")   # Remove UNION keyword
+    $sanitized = $sanitized.Replace("SELECT", "")  # Remove SELECT keyword
+    $sanitized = $sanitized.Replace("INSERT", "")  # Remove INSERT keyword
+    $sanitized = $sanitized.Replace("UPDATE", "")  # Remove UPDATE keyword
+    $sanitized = $sanitized.Replace("DELETE", "")  # Remove DELETE keyword (except our intended use)
+    $sanitized = $sanitized.Replace("DROP", "")    # Remove DROP keyword
+    $sanitized = $sanitized.Replace("ALTER", "")   # Remove ALTER keyword
+    $sanitized = $sanitized.Replace("CREATE", "")  # Remove CREATE keyword
+    $sanitized = $sanitized.Replace("EXEC", "")    # Remove EXEC keyword
+    $sanitized = $sanitized.Replace("EXECUTE", "") # Remove EXECUTE keyword
+
+    # Remove any remaining dangerous patterns
+    $sanitized = $sanitized -replace '\b(OR|AND)\s+\d+\s*=\s*\d+\b', ''  # Remove OR/AND 1=1 patterns
+    $sanitized = $sanitized -replace '\b(OR|AND)\s+[''"].*?[''"]', ''     # Remove OR/AND string patterns
+
+    # Validate the pattern only contains safe characters for LIKE operations
+    if ($sanitized -match '[^a-zA-Z0-9%_\-\.]') {
+        Write-LogWarning "Pattern contains potentially unsafe characters after sanitization: $sanitized"
+        # Further sanitize by keeping only alphanumeric, %, _, -, and . characters
+        $sanitized = $sanitized -replace '[^a-zA-Z0-9%_\-\.]', ''
+    }
+
+    Write-LogDebug "Sanitized SQL pattern: '$Pattern' -> '$sanitized'"
     return $sanitized
+}
+
+<#
+.SYNOPSIS
+    Validates that a SQL pattern is safe for use in LIKE operations
+.PARAMETER Pattern
+    The pattern to validate
+.OUTPUTS
+    bool - True if pattern is safe
+#>
+function Test-SafeSQLPattern {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Pattern
+    )
+
+    # Check for dangerous SQL injection patterns
+    $dangerousPatterns = @(
+        "';",           # Statement termination
+        "--",           # SQL comments
+        "/\*",          # Block comment start
+        "\*/",          # Block comment end
+        "\bUNION\b",    # UNION keyword
+        "\bSELECT\b",   # SELECT keyword
+        "\bINSERT\b",   # INSERT keyword
+        "\bUPDATE\b",   # UPDATE keyword
+        "\bDROP\b",     # DROP keyword
+        "\bALTER\b",    # ALTER keyword
+        "\bCREATE\b",   # CREATE keyword
+        "\bEXEC\b",     # EXEC keyword
+        "\bEXECUTE\b",  # EXECUTE keyword
+        "xp_",          # Extended procedures
+        "sp_",          # Stored procedures
+        "\b(OR|AND)\s+\d+\s*=\s*\d+\b"  # OR/AND 1=1 patterns
+    )
+
+    foreach ($dangerousPattern in $dangerousPatterns) {
+        if ($Pattern -match $dangerousPattern) {
+            Show-ErrorMessage "Dangerous SQL injection pattern detected in input"
+            Write-LogWarning "Dangerous SQL pattern detected: $dangerousPattern in '$Pattern'"
+            return $false
+        }
+    }
+
+    return $true
 }
 
 $script:TelemetryPatterns = @(
@@ -589,5 +666,7 @@ Export-ModuleMember -Function @(
     'Show-CleaningPreview',
     'Test-DatabaseConnectivity',
     'Optimize-Database',
-    'Clear-DatabaseProductionMethod'
+    'Clear-DatabaseProductionMethod',
+    'Get-SafeSQLPattern',
+    'Test-SafeSQLPattern'
 )

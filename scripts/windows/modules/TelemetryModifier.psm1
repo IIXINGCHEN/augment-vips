@@ -9,6 +9,7 @@
 # Import required modules
 Import-Module (Join-Path $PSScriptRoot "Logger.psm1") -Force
 Import-Module (Join-Path $PSScriptRoot "BackupManager.psm1") -Force
+Import-Module (Join-Path $PSScriptRoot "CommonUtils.psm1") -Force
 
 # Telemetry modification result class
 class TelemetryModificationResult {
@@ -170,72 +171,8 @@ function New-TelemetryId {
     }
 }
 
-<#
-.SYNOPSIS
-    Generates a cryptographically secure hexadecimal string
-.PARAMETER Length
-    Length of the hex string (number of hex characters)
-.OUTPUTS
-    string - Secure hex string
-#>
-function New-SecureHexString {
-    [CmdletBinding()]
-    param(
-        [Parameter(Mandatory = $true)]
-        [int]$Length
-    )
-    
-    try {
-        # Calculate number of bytes needed (2 hex chars per byte)
-        $byteCount = [Math]::Ceiling($Length / 2)
-        
-        # Generate random bytes using cryptographically secure RNG
-        $bytes = New-Object byte[] $byteCount
-        $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
-        $rng.GetBytes($bytes)
-        $rng.Dispose()
-        
-        # Convert to hex string and trim to exact length
-        $hexString = [System.BitConverter]::ToString($bytes).Replace("-", "").ToLower()
-        return $hexString.Substring(0, [Math]::Min($hexString.Length, $Length))
-    }
-    catch {
-        Write-LogError "Failed to generate secure hex string" -Exception $_.Exception
-        throw
-    }
-}
-
-<#
-.SYNOPSIS
-    Generates a cryptographically secure UUID (Version 4)
-.OUTPUTS
-    string - Secure UUID
-#>
-function New-SecureUUID {
-    [CmdletBinding()]
-    param()
-
-    try {
-        # Generate random bytes for UUID
-        $bytes = New-Object byte[] 16
-        $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
-        $rng.GetBytes($bytes)
-        $rng.Dispose()
-        
-        # Set version (4) and variant bits according to RFC 4122
-        $bytes[6] = ($bytes[6] -band 0x0F) -bor 0x40  # Version 4
-        $bytes[8] = ($bytes[8] -band 0x3F) -bor 0x80  # Variant 10
-        
-        # Format as UUID string
-        $uuid = [System.Guid]::new($bytes).ToString()
-        return $uuid
-    }
-    catch {
-        Write-LogError "Failed to generate secure UUID" -Exception $_.Exception
-        # Fallback to .NET Guid if crypto fails
-        return [System.Guid]::NewGuid().ToString()
-    }
-}
+# Note: New-SecureHexString and New-SecureUUID functions have been moved to CommonUtils.psm1
+# to eliminate code duplication and provide unified ID generation across all modules
 
 <#
 .SYNOPSIS
@@ -515,8 +452,6 @@ Export-ModuleMember -Function @(
     'Set-VSCodeTelemetryIds',
     'Set-VSCodeTelemetryIdsMultiple',
     'New-TelemetryId',
-    'New-SecureHexString',
-    'New-SecureUUID',
     'Test-StorageJsonValidity',
     'Get-CurrentTelemetryIds',
     'Show-TelemetryModificationPreview',

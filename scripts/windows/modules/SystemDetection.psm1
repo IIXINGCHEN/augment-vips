@@ -12,6 +12,9 @@ Import-Module (Join-Path $PSScriptRoot "Logger.psm1") -Force
 # Import DependencyManager module
 Import-Module (Join-Path $PSScriptRoot "DependencyManager.psm1") -Force
 
+# Import CommonUtils module
+Import-Module (Join-Path $PSScriptRoot "CommonUtils.psm1") -Force
+
 # System requirements
 $script:MinWindowsVersion = [Version]"10.0.0.0"
 $script:MinPowerShellVersion = [Version]"5.1.0.0"
@@ -253,18 +256,117 @@ function Test-AdministratorPrivileges {
     try {
         $currentPrincipal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
         $isAdmin = $currentPrincipal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-        
+
         if ($isAdmin) {
             Write-LogSuccess "Running with administrator privileges"
         } else {
             Write-LogInfo "Running without administrator privileges"
             Write-LogInfo "Some operations may require administrator rights"
         }
-        
+
         return $isAdmin
     }
     catch {
         Write-LogError "Failed to check administrator privileges" -Exception $_.Exception
+        return $false
+    }
+}
+
+<#
+.SYNOPSIS
+    Enforces administrator privileges for critical operations
+.PARAMETER OperationName
+    Name of the operation requiring admin privileges
+.PARAMETER AllowContinue
+    Allow operation to continue without admin privileges (with warning)
+.OUTPUTS
+    System.Boolean - True if admin privileges are available or operation can continue
+#>
+function Assert-AdminPrivileges {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$OperationName,
+        [switch]$AllowContinue
+    )
+
+    try {
+        $isAdmin = Test-AdministratorPrivileges
+
+        if (-not $isAdmin) {
+            $message = "Operation '$OperationName' requires administrator privileges"
+
+            if ($AllowContinue) {
+                Show-WarningMessage "$message - Continuing with limited functionality"
+                Show-WarningMessage "Some features may not work correctly without admin rights"
+                return $true
+            } else {
+                Show-ErrorMessage $message
+                Show-ErrorMessage "Please restart PowerShell as Administrator to perform this operation"
+                Show-InfoMessage "Right-click PowerShell and select 'Run as Administrator'"
+                return $false
+            }
+        }
+
+        Write-LogDebug "Administrator privileges confirmed for operation: $OperationName"
+        return $true
+    }
+    catch {
+        Write-LogError "Failed to verify administrator privileges for operation: $OperationName" -Exception $_.Exception
+
+        if ($AllowContinue) {
+            Write-LogWarning "Continuing operation despite privilege check failure"
+            return $true
+        }
+
+        return $false
+    }
+}
+
+<#
+.SYNOPSIS
+    Checks if the current user has write access to a specific path
+.PARAMETER Path
+    Path to check for write access
+.OUTPUTS
+    System.Boolean - True if write access is available
+#>
+function Test-WriteAccess {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path
+    )
+
+    try {
+        # Ensure the directory exists
+        $directory = if (Test-Path $Path -PathType Container) {
+            $Path
+        } else {
+            Split-Path $Path -Parent
+        }
+
+        if (-not (Test-Path $directory)) {
+            Write-LogDebug "Directory does not exist: $directory"
+            return $false
+        }
+
+        # Try to create a temporary file to test write access
+        $testFile = Join-Path $directory "write_test_$(Get-Random).tmp"
+
+        try {
+            "test" | Out-File -FilePath $testFile -Force
+            Remove-Item $testFile -Force -ErrorAction SilentlyContinue
+            Write-LogDebug "Write access confirmed for: $directory"
+            return $true
+        }
+        catch {
+            Write-LogDebug "Write access denied for: $directory"
+            return $false
+        }
+    }
+    catch {
+        Write-LogError "Failed to test write access for: $Path" -Exception $_.Exception
         return $false
     }
 }
@@ -458,6 +560,8 @@ Export-ModuleMember -Function @(
     'Test-DependenciesEnhanced',
     'Test-ExecutionPolicy',
     'Test-AdministratorPrivileges',
+    'Assert-AdminPrivileges',
+    'Test-WriteAccess',
     'Get-SystemInformation',
     'Show-SystemInformation',
     'Test-VSCodeOperationRequirements',
