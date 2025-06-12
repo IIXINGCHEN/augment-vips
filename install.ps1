@@ -441,13 +441,43 @@ function Invoke-EmbeddedDatabaseCleaning {
                         $backupFile = "$($file.FullName).backup_$timestamp"
                         Copy-Item $file.FullName $backupFile
 
-                        # Clean database
-                        $cleaningQuery = "DELETE FROM ItemTable WHERE key LIKE '%augment%' OR key LIKE '%telemetry%' OR key LIKE '%machineId%' OR key LIKE '%deviceId%' OR key LIKE '%sqmId%'; VACUUM;"
-                        sqlite3 $file.FullName $cleaningQuery
+                        # Clean database with comprehensive patterns
+                        $cleaningQuery = @"
+DELETE FROM ItemTable WHERE
+    key LIKE '%augment%' OR
+    key LIKE '%Augment%' OR
+    key LIKE '%AUGMENT%' OR
+    key LIKE 'Augment.%' OR
+    key LIKE 'augment.%' OR
+    key LIKE '%augment-chat%' OR
+    key LIKE '%augment-panel%' OR
+    key LIKE '%vscode-augment%' OR
+    key LIKE '%telemetry%' OR
+    key LIKE '%machineId%' OR
+    key LIKE '%deviceId%' OR
+    key LIKE '%sqmId%' OR
+    key LIKE '%machine-id%' OR
+    key LIKE '%device-id%' OR
+    key LIKE '%sqm-id%';
+"@
+
+                        # Execute cleaning query
+                        $result = sqlite3 $file.FullName $cleaningQuery
+
+                        # Get count of changes
+                        $changesQuery = "SELECT changes();"
+                        $changesCount = sqlite3 $file.FullName $changesQuery
+
+                        # Run VACUUM to reclaim space
+                        sqlite3 $file.FullName "VACUUM;"
 
                         if ($LASTEXITCODE -eq 0) {
-                            Write-LogSuccess "Database cleaned: $($file.FullName)"
-                            $totalCleaned++
+                            if ([int]$changesCount -gt 0) {
+                                Write-LogSuccess "Database cleaned: $($file.FullName) (removed $changesCount entries)"
+                                $totalCleaned += [int]$changesCount
+                            } else {
+                                Write-LogInfo "Database processed: $($file.FullName) (no matching entries found)"
+                            }
                         } else {
                             Write-LogError "Failed to clean database: $($file.FullName)"
                             $totalErrors++

@@ -297,26 +297,66 @@ function Invoke-DatabaseCleaning {
                 Write-LogInfo "Backup created: $backupFile"
             }
             
-            # Clean database
+            # Clean database with comprehensive patterns
             $cleaningQuery = @"
-DELETE FROM ItemTable WHERE key LIKE '%augment%';
-DELETE FROM ItemTable WHERE key LIKE '%telemetry%';
-DELETE FROM ItemTable WHERE key LIKE '%machineId%';
-DELETE FROM ItemTable WHERE key LIKE '%deviceId%';
-DELETE FROM ItemTable WHERE key LIKE '%sqmId%';
-VACUUM;
+DELETE FROM ItemTable WHERE
+    key LIKE '%augment%' OR
+    key LIKE '%Augment%' OR
+    key LIKE '%AUGMENT%' OR
+    key LIKE 'Augment.%' OR
+    key LIKE 'augment.%' OR
+    key LIKE '%augment-chat%' OR
+    key LIKE '%augment-panel%' OR
+    key LIKE '%vscode-augment%' OR
+    key LIKE '%telemetry%' OR
+    key LIKE '%machineId%' OR
+    key LIKE '%deviceId%' OR
+    key LIKE '%sqmId%' OR
+    key LIKE '%machine-id%' OR
+    key LIKE '%device-id%' OR
+    key LIKE '%sqm-id%';
 "@
             
             if ($DryRun) {
-                $countQuery = "SELECT COUNT(*) FROM ItemTable WHERE key LIKE '%augment%' OR key LIKE '%telemetry%' OR key LIKE '%machineId%' OR key LIKE '%deviceId%' OR key LIKE '%sqmId%';"
+                $countQuery = @"
+SELECT COUNT(*) FROM ItemTable WHERE
+    key LIKE '%augment%' OR
+    key LIKE '%Augment%' OR
+    key LIKE '%AUGMENT%' OR
+    key LIKE 'Augment.%' OR
+    key LIKE 'augment.%' OR
+    key LIKE '%augment-chat%' OR
+    key LIKE '%augment-panel%' OR
+    key LIKE '%vscode-augment%' OR
+    key LIKE '%telemetry%' OR
+    key LIKE '%machineId%' OR
+    key LIKE '%deviceId%' OR
+    key LIKE '%sqmId%' OR
+    key LIKE '%machine-id%' OR
+    key LIKE '%device-id%' OR
+    key LIKE '%sqm-id%';
+"@
                 $count = sqlite3 $dbFile $countQuery
                 Write-LogInfo "DRY RUN: Would remove $count entries from $dbFile"
                 $totalCleaned += [int]$count
             } else {
-                sqlite3 $dbFile $cleaningQuery
+                # Execute cleaning query
+                $result = sqlite3 $dbFile $cleaningQuery
+
+                # Get count of changes
+                $changesQuery = "SELECT changes();"
+                $changesCount = sqlite3 $dbFile $changesQuery
+
+                # Run VACUUM to reclaim space
+                sqlite3 $dbFile "VACUUM;"
+
                 if ($LASTEXITCODE -eq 0) {
-                    Write-LogSuccess "Database cleaned successfully: $dbFile"
-                    $totalCleaned++
+                    if ([int]$changesCount -gt 0) {
+                        Write-LogSuccess "Database cleaned: $dbFile (removed $changesCount entries)"
+                        $totalCleaned += [int]$changesCount
+                    } else {
+                        Write-LogInfo "Database processed: $dbFile (no matching entries found)"
+                    }
                 } else {
                     Write-LogError "Database cleaning failed: $dbFile"
                     $totalErrors++
