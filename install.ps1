@@ -1,5 +1,5 @@
 # install.ps1
-#
+# Version: 1.0.1 - Updated: 2025-06-12 21:13:00
 # Enterprise-grade Windows installer for Augment VIP
 # Integrates with the new cross-platform modular architecture
 # Production-ready with comprehensive error handling and security
