@@ -27,7 +27,7 @@ try {
     }
     
     # PowerShell doesn't directly source bash scripts, so we implement equivalent functions
-    Write-Verbose "Initializing Windows platform implementation..."
+    Write-LogInfo "Initializing Windows platform implementation..."
     
 } catch {
     Write-Error "Failed to initialize: $($_.Exception.Message)"

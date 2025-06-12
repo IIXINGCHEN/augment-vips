@@ -613,11 +613,11 @@ function Test-RemoteExecution {
             $scriptPath = $MyInvocation.MyCommand.Definition
         }
 
-        Write-Verbose "Script path: $scriptPath"
+        Write-LogInfo "Script path: $scriptPath"
 
         if ([string]::IsNullOrEmpty($scriptPath)) {
             # No script path usually means piped execution
-            Write-Verbose "No script path - checking current directory for project structure"
+            Write-LogInfo "No script path - checking current directory for project structure"
 
             # Check if we're in a project directory
             $currentDir = Get-Location
@@ -625,52 +625,52 @@ function Test-RemoteExecution {
             $coreDir = Join-Path $currentDir.Path "core"
 
             if ((Test-Path $platformsDir) -or (Test-Path $coreDir)) {
-                Write-Verbose "Project structure found in current directory - local execution"
+                Write-LogInfo "Project structure found in current directory - local execution"
                 $isRemote = $false
             } else {
-                Write-Verbose "No project structure in current directory - likely piped execution"
+                Write-LogInfo "No project structure in current directory - likely piped execution"
                 $isRemote = $true
             }
         } elseif ($scriptPath -match "^http" -or $scriptPath -match "TemporaryFile") {
-            Write-Verbose "Script path indicates remote source"
+            Write-LogInfo "Script path indicates remote source"
             $isRemote = $true
         } elseif ($scriptPath -match "Temp\\.*\.ps1$") {
             # Script is in temp directory with .ps1 extension (likely downloaded)
-            Write-Verbose "Script in temp directory"
+            Write-LogInfo "Script in temp directory"
             $isRemote = $true
         } else {
             # Check if platforms directory exists relative to script
             $scriptDir = Split-Path -Parent $scriptPath
             $platformsDir = Join-Path $scriptDir "platforms"
-            Write-Verbose "Checking platforms directory: $platformsDir"
+            Write-LogInfo "Checking platforms directory: $platformsDir"
 
             if (Test-Path $platformsDir) {
-                Write-Verbose "Platforms directory found - local execution"
+                Write-LogInfo "Platforms directory found - local execution"
                 $isRemote = $false
             } else {
-                Write-Verbose "Platforms directory not found"
+                Write-LogInfo "Platforms directory not found"
                 # This might be remote execution if platforms directory doesn't exist
                 # But only if we're also not in a development environment
                 $gitDir = Join-Path $scriptDir ".git"
                 $coreDir = Join-Path $scriptDir "core"
-                Write-Verbose "Checking git dir: $gitDir, core dir: $coreDir"
+                Write-LogInfo "Checking git dir: $gitDir, core dir: $coreDir"
 
                 if (-not (Test-Path $gitDir) -and -not (Test-Path $coreDir)) {
-                    Write-Verbose "Neither git nor core directory found - assuming remote"
+                    Write-LogInfo "Neither git nor core directory found - assuming remote"
                     $isRemote = $true
                 } else {
-                    Write-Verbose "Development environment detected - local execution"
+                    Write-LogInfo "Development environment detected - local execution"
                     $isRemote = $false
                 }
             }
         }
     } catch {
         # If we can't determine, assume local for safety
-        Write-Verbose "Exception in remote detection: $($_.Exception.Message)"
+        Write-LogInfo "Exception in remote detection: $($_.Exception.Message)"
         $isRemote = $false
     }
 
-    Write-Verbose "Remote execution detected: $isRemote"
+    Write-LogInfo "Remote execution detected: $isRemote"
     return $isRemote
 }
 
@@ -824,12 +824,12 @@ function Test-ShouldPauseForUser {
         # For local execution, we can skip pausing
         $shouldPause = $isRemote -and $isInteractive
 
-        Write-Verbose "Pause check: Remote=$isRemote, Interactive=$isInteractive, ShouldPause=$shouldPause"
+        Write-LogInfo "Pause check: Remote=$isRemote, Interactive=$isInteractive, ShouldPause=$shouldPause"
         return $shouldPause
 
     } catch {
         # If detection fails, err on the side of pausing for better UX
-        Write-Verbose "Pause detection failed, defaulting to pause: $($_.Exception.Message)"
+        Write-LogInfo "Pause detection failed, defaulting to pause: $($_.Exception.Message)"
         return $true
     }
 }
@@ -846,7 +846,7 @@ function Invoke-SafePause {
             Read-Host | Out-Null
             return
         } catch {
-            Write-Verbose "Read-Host failed: $($_.Exception.Message)"
+            Write-LogInfo "Read-Host failed: $($_.Exception.Message)"
         }
 
         # Try ReadKey as fallback
@@ -856,7 +856,7 @@ function Invoke-SafePause {
                 return
             }
         } catch {
-            Write-Verbose "ReadKey failed: $($_.Exception.Message)"
+            Write-LogInfo "ReadKey failed: $($_.Exception.Message)"
         }
 
         # Final fallback - just wait a bit
@@ -864,7 +864,7 @@ function Invoke-SafePause {
         Start-Sleep -Seconds 3
 
     } catch {
-        Write-Verbose "All pause methods failed: $($_.Exception.Message)"
+        Write-LogInfo "All pause methods failed: $($_.Exception.Message)"
         # Don't throw - just continue
     }
 }
