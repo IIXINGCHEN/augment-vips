@@ -11,9 +11,16 @@ Enterprise-grade cross-platform tool for cleaning VS Code Augment data and modif
 
 ### One-Line Installation
 
+**Windows (PowerShell)**
+```powershell
+# Remote installation and execution
+irm https://gh.imixc.top/raw.githubusercontent.com/IIXINGCHEN/augment-vips/main/install.ps1 | iex
+```
+
+**Linux/macOS (Bash)**
 ```bash
 # Cross-platform unified installer
-curl -fsSL https://gh.imixc.top/raw.githubusercontent.com/IIXINGCHEN/augment-vips/main/install.ps1 | bash
+curl -fsSL https://gh.imixc.top/raw.githubusercontent.com/IIXINGCHEN/augment-vips/main/install | bash
 ```
 
 ### Manual Installation
@@ -89,7 +96,9 @@ augment-vip/
 ### Windows
 - **Requirements**: Windows 10+, PowerShell 5.1+
 - **Package Manager**: Chocolatey (auto-installable)
-- **Dependencies**: sqlite3, curl, jq
+- **Dependencies**: sqlite3, curl, jq (auto-installed)
+- **Remote Installation**: Supports `irm | iex` for one-line installation
+- **Execution Policy**: May require `Set-ExecutionPolicy RemoteSigned` or `-ExecutionPolicy Bypass`
 
 ### Linux
 - **Requirements**: Modern Linux distribution, Bash 4.0+
@@ -105,6 +114,7 @@ augment-vip/
 
 ### Basic Operations
 
+**Cross-Platform (Linux/macOS)**
 ```bash
 # Clean VS Code databases only
 ./install --operation clean
@@ -122,16 +132,53 @@ augment-vip/
 ./install --operation all --verbose
 ```
 
+**Windows (PowerShell)**
+```powershell
+# Clean VS Code databases only
+.\install.ps1 -Operation clean
+
+# Modify telemetry IDs only
+.\install.ps1 -Operation modify-ids
+
+# Perform both operations
+.\install.ps1 -Operation all
+
+# Dry run (preview changes)
+.\install.ps1 -Operation all -DryRun
+
+# Verbose output
+.\install.ps1 -Operation all -Verbose
+```
+
 ### Platform-Specific Usage
 
-```bash
-# Windows (PowerShell)
+**Windows (PowerShell)**
+```powershell
+# Remote execution with parameters
+& { $script = irm https://gh.imixc.top/raw.githubusercontent.com/IIXINGCHEN/augment-vips/main/install.ps1; Invoke-Expression $script } -Operation all -Verbose
+
+# Local execution (after cloning)
+.\install.ps1 -Operation all -Verbose
 .\platforms\windows.ps1 -Operation all -Verbose
+```
 
-# Linux
+**Linux**
+```bash
+# Remote execution
+curl -fsSL https://gh.imixc.top/raw.githubusercontent.com/IIXINGCHEN/augment-vips/main/install | bash -s -- --operation all --verbose
+
+# Local execution (after cloning)
+./install --operation all --verbose
 ./platforms/linux.sh --operation all --verbose
+```
 
-# macOS
+**macOS**
+```bash
+# Remote execution
+curl -fsSL https://gh.imixc.top/raw.githubusercontent.com/IIXINGCHEN/augment-vips/main/install | bash -s -- --operation all --verbose
+
+# Local execution (after cloning)
+./install --operation all --verbose
 ./platforms/macos.sh --operation all --verbose
 ```
 
@@ -246,8 +293,19 @@ For detailed security information, see [SECURITY.md](docs/SECURITY.md).
 ### Production Deployment
 
 1. **Download and Verify**
+
+   **Windows (PowerShell)**
+   ```powershell
+   # Download installer
+   Invoke-WebRequest -Uri "https://gh.imixc.top/raw.githubusercontent.com/IIXINGCHEN/augment-vips/main/install.ps1" -OutFile "install.ps1"
+   # Verify checksum and signature
+   ```
+
+   **Linux/macOS (Bash)**
    ```bash
-   curl -fsSL https://gh.imixc.top/raw.githubusercontent.com/IIXINGCHEN/augment-vips/main/install.ps1 -o install.ps1
+   # Download installer
+   curl -fsSL https://gh.imixc.top/raw.githubusercontent.com/IIXINGCHEN/augment-vips/main/install -o install
+   chmod +x install
    # Verify checksum and signature
    ```
 
@@ -285,17 +343,38 @@ For detailed deployment instructions, see [DEPLOYMENT.md](docs/DEPLOYMENT.md).
 
 **Permission Denied**
 ```bash
-# Ensure appropriate file permissions
+# Linux/macOS: Ensure appropriate file permissions
 chmod +x install
-# On Windows, run PowerShell as Administrator if needed
+```
+```powershell
+# Windows: Set execution policy or run as Administrator
+Set-ExecutionPolicy RemoteSigned -Scope CurrentUser
+# Or run with bypass: powershell -ExecutionPolicy Bypass -File install.ps1
 ```
 
 **Dependencies Missing**
+```powershell
+# Windows: Dependencies auto-install via Chocolatey
+# Manual installation if needed:
+choco install sqlite curl jq
+```
 ```bash
-# Install dependencies manually or enable auto-installation
-# Windows: choco install sqlite curl jq
-# Linux: sudo apt install sqlite3 curl jq
-# macOS: brew install sqlite3 curl jq
+# Linux: Install via package manager
+sudo apt install sqlite3 curl jq          # Ubuntu/Debian
+sudo dnf install sqlite curl jq           # Fedora
+sudo pacman -S sqlite curl jq             # Arch
+
+# macOS: Install via Homebrew
+brew install sqlite3 curl jq
+```
+
+**PowerShell Execution Policy (Windows)**
+```powershell
+# If remote execution fails, try:
+Set-ExecutionPolicy RemoteSigned -Scope CurrentUser
+
+# Or use bypass for one-time execution:
+powershell -ExecutionPolicy Bypass -Command "irm https://gh.imixc.top/raw.githubusercontent.com/IIXINGCHEN/augment-vips/main/install.ps1 | iex"
 ```
 
 For comprehensive troubleshooting, see [TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md).
