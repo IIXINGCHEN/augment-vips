@@ -502,6 +502,9 @@ function Install-Repository {
             "scripts/windows/modules/TelemetryModifier.psm1",
             "scripts/windows/modules/CommonUtils.psm1",
             "scripts/windows/modules/UnifiedServices.psm1",
+            "scripts/windows/modules/PythonBridge.psm1",
+            "scripts/windows/modules/SecureIdGenerator.psm1",
+            "scripts/windows/modules/ConfigurationCache.psm1",
 
             # Cross-platform Python scripts
             "scripts/cross-platform/install.py",
