@@ -731,14 +731,75 @@ function Main {
     }
 }
 
+# Check if we should pause for user interaction (remote execution)
+function Test-ShouldPauseForUser {
+    # Check if this is remote execution and interactive
+    $isRemote = Test-RemoteExecution
+    $isInteractive = [Environment]::UserInteractive
+
+    return ($isRemote -and $isInteractive)
+}
+
+# Display execution summary
+function Show-ExecutionSummary {
+    param([int]$ExitCode)
+
+    Write-Host "`n" -NoNewline
+    Write-Host "=" * 60 -ForegroundColor Cyan
+    Write-Host "AUGMENT VIP EXECUTION SUMMARY" -ForegroundColor Cyan
+    Write-Host "=" * 60 -ForegroundColor Cyan
+
+    if ($ExitCode -eq 0) {
+        Write-Host "Status: " -NoNewline -ForegroundColor White
+        Write-Host "SUCCESS" -ForegroundColor Green
+        Write-Host "Operation: $Operation" -ForegroundColor White
+        if ($DryRun) {
+            Write-Host "Mode: DRY RUN (no changes made)" -ForegroundColor Yellow
+        } else {
+            Write-Host "Mode: LIVE EXECUTION" -ForegroundColor Green
+        }
+    } else {
+        Write-Host "Status: " -NoNewline -ForegroundColor White
+        Write-Host "FAILED" -ForegroundColor Red
+        Write-Host "Exit Code: $ExitCode" -ForegroundColor Red
+    }
+
+    Write-Host "Timestamp: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')" -ForegroundColor White
+    Write-Host "=" * 60 -ForegroundColor Cyan
+    Write-Host ""
+}
+
 # Main script execution
 try {
     $exitCode = Main
     Write-LogInfo "Script execution completed with exit code: $exitCode"
+
+    # Show summary and pause if needed
+    if (Test-ShouldPauseForUser) {
+        Show-ExecutionSummary -ExitCode $exitCode
+
+        if ($exitCode -eq 0) {
+            Write-Host "Press any key to exit..." -ForegroundColor Green
+        } else {
+            Write-Host "Press any key to exit..." -ForegroundColor Red
+        }
+
+        $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
+    }
+
     exit $exitCode
 } catch {
     Write-LogError "Unhandled exception: $($_.Exception.Message)"
     Write-LogError "Stack trace: $($_.ScriptStackTrace)"
     Write-AuditLog "INSTALLER_EXCEPTION" "Unhandled exception: $($_.Exception.Message)"
+
+    # Show error summary and pause if needed
+    if (Test-ShouldPauseForUser) {
+        Show-ExecutionSummary -ExitCode 1
+        Write-Host "EXCEPTION: $($_.Exception.Message)" -ForegroundColor Red
+        Write-Host "Press any key to exit..." -ForegroundColor Red
+        $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
+    }
+
     exit 1
 }
