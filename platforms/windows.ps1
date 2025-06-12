@@ -729,7 +729,7 @@ function Generate-SecureIdentifiers {
         SessionId = $sessionId
         InstallationId = $installationId
         UserId = $userId
-        Timestamp = Get-Date
+        Timestamp = (Get-Date -Format "yyyy-MM-dd HH:mm:ss UTC")
     }
 }
 
