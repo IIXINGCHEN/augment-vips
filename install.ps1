@@ -13,7 +13,7 @@
 #     -Help                  Show this help message
 
 param(
-    [string]$Operation = "help",
+    [string]$Operation = "",
     [switch]$DryRun = $false,
     [switch]$Verbose = $false,
     [switch]$AutoInstallDeps = $false,
@@ -300,6 +300,13 @@ function Invoke-WindowsPlatform {
 
     Write-LogInfo "Executing Windows platform implementation..."
 
+    # Check if we should force embedded implementation
+    if ($script:ForceEmbeddedImplementation) {
+        # Use embedded implementation for remote execution
+        Write-LogInfo "Using embedded Windows platform implementation (forced)"
+        return Invoke-EmbeddedWindowsImplementation -Operation $Operation -DryRun $DryRun -Verbose $Verbose
+    }
+
     # Check if platforms directory exists
     $platformsDir = Join-Path $PROJECT_ROOT "platforms"
     $windowsScript = Join-Path $platformsDir "windows.ps1"
@@ -556,7 +563,7 @@ NOTES:
     - Backups are created automatically before modifications
     - Use -DryRun to preview changes without applying them
 
-For more information, visit: https://github.com/IIXINGCHEN/augment-vip
+For more information, visit: https://github.com/IIXINGCHEN/augment-vips
 
 "@ -ForegroundColor Green
 }
@@ -639,56 +646,87 @@ function Test-RemoteExecution {
 
 function Initialize-RemoteExecution {
     Write-LogInfo "Detected remote execution mode"
-    Write-LogInfo "Downloading project files for full functionality..."
+    Write-LogInfo "Using embedded implementation for remote execution..."
 
-    # Create temporary working directory
+    # Create temporary working directory for logs
     $tempDir = Join-Path $env:TEMP "augment-vip-$(Get-Date -Format 'yyyyMMdd-HHmmss')"
     New-Item -ItemType Directory -Path $tempDir -Force | Out-Null
 
     # Set project root to temp directory
     $script:PROJECT_ROOT = $tempDir
 
-    # Download essential files
-    $essentialFiles = @(
-        "platforms/windows.ps1",
-        "config/settings.json",
-        "config/security.json"
-    )
+    # Set flag to force embedded implementation
+    $script:ForceEmbeddedImplementation = $true
 
-    foreach ($file in $essentialFiles) {
-        $url = "$REPO_URL/$file"
-        $localPath = Join-Path $tempDir $file
-        $localDir = Split-Path $localPath -Parent
-
-        if (-not (Test-Path $localDir)) {
-            New-Item -ItemType Directory -Path $localDir -Force | Out-Null
-        }
-
-        try {
-            Write-LogInfo "Downloading: $file"
-            Invoke-WebRequest -Uri $url -OutFile $localPath -UseBasicParsing
-            Write-LogSuccess "Downloaded: $file"
-        } catch {
-            Write-LogWarning "Failed to download $file`: $($_.Exception.Message)"
-            Write-LogInfo "Continuing with embedded functionality..."
-        }
-    }
-
-    Write-LogSuccess "Remote execution environment initialized"
-    Write-AuditLog "REMOTE_INIT" "Remote execution initialized in: $tempDir"
+    Write-LogSuccess "Remote execution environment initialized (embedded mode)"
+    Write-AuditLog "REMOTE_INIT" "Remote execution initialized in embedded mode: $tempDir"
 
     return $true
+}
+
+# Determine default operation based on execution context
+function Get-DefaultOperation {
+    # If operation is explicitly set, use it
+    if (-not [string]::IsNullOrEmpty($Operation)) {
+        return $Operation
+    }
+
+    # Check if we're in remote execution mode
+    if (Test-RemoteExecution) {
+        Write-LogInfo "Remote execution detected - defaulting to 'all' operation"
+        Write-LogInfo "This will clean VS Code databases and modify telemetry IDs"
+
+        # Auto-install dependencies for remote execution
+        $script:AutoInstallDeps = $true
+
+        # Ask for confirmation unless in non-interactive mode
+        if (Test-InteractiveMode) {
+            Write-Host "`nRemote execution detected. This will:" -ForegroundColor Yellow
+            Write-Host "  1. Clean VS Code Augment database entries" -ForegroundColor White
+            Write-Host "  2. Modify telemetry IDs (machineId, deviceId, sqmId)" -ForegroundColor White
+            Write-Host "  3. Create automatic backups before changes" -ForegroundColor White
+            Write-Host ""
+
+            $response = Read-Host "Continue with operation? (Y/n)"
+            if ($response -match '^[Nn]$') {
+                Write-LogInfo "Operation cancelled by user"
+                return "help"
+            }
+        }
+
+        return "all"
+    } else {
+        # Local execution defaults to help
+        return "help"
+    }
+}
+
+# Test if we're in interactive mode
+function Test-InteractiveMode {
+    try {
+        # Check if we can read from host
+        $Host.UI.RawUI | Out-Null
+        return $true
+    } catch {
+        return $false
+    }
 }
 
 # Main execution function
 function Main {
     Write-LogInfo "Starting Augment VIP Windows installer v${SCRIPT_VERSION}"
 
-    # Show help if requested
-    if ($Help -or $Operation -eq "help") {
+    # Determine the operation to perform
+    $actualOperation = Get-DefaultOperation
+
+    # Show help if requested or determined
+    if ($Help -or $actualOperation -eq "help") {
         Show-Help
         return 0
     }
+
+    # Update the operation variable for the rest of the script
+    $script:Operation = $actualOperation
 
     # Check for remote execution and handle accordingly
     if (Test-RemoteExecution) {
@@ -720,13 +758,19 @@ function Main {
     }
 
     # Execute Windows platform implementation
-    if (Invoke-WindowsPlatform -Operation $Operation -DryRun $DryRun -Verbose $Verbose) {
+    if (Invoke-WindowsPlatform -Operation $actualOperation -DryRun $DryRun -Verbose $Verbose) {
         Write-LogSuccess "Augment VIP operation completed successfully"
-        Write-AuditLog "INSTALLER_COMPLETE" "Installation completed successfully: $Operation"
+        Write-AuditLog "INSTALLER_COMPLETE" "Installation completed successfully: $actualOperation"
+
+        # Store operation for summary display
+        $script:FinalOperation = $actualOperation
         return 0
     } else {
         Write-LogError "Augment VIP operation failed"
-        Write-AuditLog "INSTALLER_FAILED" "Installation failed: $Operation"
+        Write-AuditLog "INSTALLER_FAILED" "Installation failed: $actualOperation"
+
+        # Store operation for summary display
+        $script:FinalOperation = $actualOperation
         return 1
     }
 }
@@ -807,7 +851,7 @@ function Show-ExecutionSummary {
     if ($ExitCode -eq 0) {
         Write-Host "Status: " -NoNewline -ForegroundColor White
         Write-Host "SUCCESS" -ForegroundColor Green
-        Write-Host "Operation: $Operation" -ForegroundColor White
+        Write-Host "Operation: $script:FinalOperation" -ForegroundColor White
         if ($DryRun) {
             Write-Host "Mode: DRY RUN (no changes made)" -ForegroundColor Yellow
         } else {

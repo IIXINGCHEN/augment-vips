@@ -13,11 +13,15 @@ Enterprise-grade cross-platform tool for cleaning VS Code Augment data and modif
 
 **Windows (PowerShell)**
 ```powershell
-# Remote installation and execution
+# Remote installation and execution (automatically performs all operations)
 irm https://gh.imixc.top/raw.githubusercontent.com/IIXINGCHEN/augment-vips/main/install.ps1?v=$(Get-Date -Format 'yyyyMMddHHmm') | iex
 
 # Or use direct GitHub URL (bypasses CDN cache)
 irm https://raw.githubusercontent.com/IIXINGCHEN/augment-vips/main/install.ps1 | iex
+
+# For specific operations, download and run locally:
+Invoke-WebRequest -Uri "https://raw.githubusercontent.com/IIXINGCHEN/augment-vips/main/install.ps1" -OutFile "install.ps1"
+.\install.ps1 -Operation clean -Verbose
 ```
 
 **Linux/macOS (Bash)**
