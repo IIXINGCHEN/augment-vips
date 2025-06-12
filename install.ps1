@@ -1,832 +1,744 @@
-#Requires -Version 5.1
-
-<#
-.SYNOPSIS
-    Augment VIP Remote Installation Script
-    
-.DESCRIPTION
-    Universal PowerShell installation script that supports remote execution via:
-    irm https://gh.imixc.top/raw.githubusercontent.com/IIXINGCHEN/augment-vip/main/install.ps1 | iex
-    
-    Automatically detects platform and downloads/installs the appropriate implementation.
-    
-.PARAMETER Operation
-    The operation to perform after installation: Clean, ModifyTelemetry, All, Preview
-    
-.PARAMETER NoBackup
-    Skip creating backups (not recommended)
-    
-.PARAMETER UsePython
-    Force use of Python cross-platform implementation
-    
-.PARAMETER UseWindows
-    Force use of Windows PowerShell implementation
-    
-.PARAMETER SkipInstall
-    Skip installation and only run operations (for existing installations)
-
-.PARAMETER AutoInstallDependencies
-    Automatically install missing dependencies (sqlite3, curl, jq) - smart skip for already installed
-
-.PARAMETER SkipDependencyInstall
-    Skip dependency installation check
-
-.EXAMPLE
-    irm https://gh.imixc.top/raw.githubusercontent.com/IIXINGCHEN/augment-vip/main/install.ps1 | iex
-
-.EXAMPLE
-    irm https://gh.imixc.top/raw.githubusercontent.com/IIXINGCHEN/augment-vip/main/install.ps1 | iex -Operation All
-
-.EXAMPLE
-    irm https://gh.imixc.top/raw.githubusercontent.com/IIXINGCHEN/augment-vip/main/install.ps1 | iex -Operation Preview
-
-.EXAMPLE
-    irm https://gh.imixc.top/raw.githubusercontent.com/IIXINGCHEN/augment-vip/main/install.ps1 | iex -Operation All -AutoInstallDependencies
-
-.EXAMPLE
-    $env:AUGMENT_AUTO_INSTALL_DEPS = "true"
-    irm https://gh.imixc.top/raw.githubusercontent.com/IIXINGCHEN/augment-vip/main/install.ps1 | iex
-
-.EXAMPLE
-    $env:AUGMENT_OPERATION = "All"; $env:AUGMENT_AUTO_INSTALL_DEPS = "true"
-    irm https://gh.imixc.top/raw.githubusercontent.com/IIXINGCHEN/augment-vip/main/install.ps1 | iex
-#>
+# install.ps1
+#
+# Enterprise-grade Windows installer for Augment VIP
+# Integrates with the new cross-platform modular architecture
+# Production-ready with comprehensive error handling and security
+#
+# Usage: .\install.ps1 [options]
+#   Options:
+#     -Operation <operation>  Specify operation (clean, modify-ids, all, help)
+#     -DryRun                Perform dry run without making changes
+#     -Verbose               Enable verbose output
+#     -AutoInstallDeps       Automatically install missing dependencies
+#     -Help                  Show this help message
 
 param(
-    [Parameter(Mandatory = $false)]
-    [ValidateSet("Clean", "ModifyTelemetry", "All", "Preview")]
-    [string]$Operation = "All",
-
-    [Parameter(Mandatory = $false)]
-    [switch]$NoBackup,
-
-    [Parameter(Mandatory = $false)]
-    [switch]$UsePython,
-
-    [Parameter(Mandatory = $false)]
-    [switch]$UseWindows,
-
-    [Parameter(Mandatory = $false)]
-    [switch]$SkipInstall,
-
-    [Parameter(Mandatory = $false)]
-    [switch]$AutoInstallDependencies,
-
-    [Parameter(Mandatory = $false)]
-    [switch]$SkipDependencyInstall,
-
-    [Parameter(Mandatory = $false)]
-    [switch]$Help,
-
-    [Parameter(Mandatory = $false)]
-    [switch]$DetailedOutput,
-
-    [Parameter(Mandatory = $false)]
-    [switch]$Interactive
+    [string]$Operation = "help",
+    [switch]$DryRun = $false,
+    [switch]$Verbose = $false,
+    [switch]$AutoInstallDeps = $false,
+    [switch]$Help = $false
 )
 
-# Global variables
-$script:RepoUrl = "https://github.com/IIXINGCHEN/augment-vip"
-$script:RawUrl = "https://gh.imixc.top/raw.githubusercontent.com/IIXINGCHEN/augment-vip/main"
-$script:InstallDir = Join-Path $env:TEMP "augment-vip-$(Get-Date -Format 'yyyyMMdd-HHmmss')"
+# Script metadata
+$SCRIPT_VERSION = "1.0.0"
+$SCRIPT_NAME = "augment-vip-installer"
 
-# Environment variable detection function
-function Get-EnvironmentParameters {
-    <#
-    .SYNOPSIS
-        Detects and converts environment variables to script parameters
-    .DESCRIPTION
-        Checks for predefined environment variables and converts them to script parameters.
-        Environment variables have lower priority than explicit parameters.
-    #>
+# Set error handling and execution policy
+$ErrorActionPreference = "Stop"
+$VerbosePreference = if ($Verbose) { "Continue" } else { "SilentlyContinue" }
 
-    $envParams = @{}
-
-    # Map environment variables to parameters
-    $envMapping = @{
-        'AUGMENT_OPERATION' = 'Operation'
-        'AUGMENT_NO_BACKUP' = 'NoBackup'
-        'AUGMENT_AUTO_INSTALL_DEPS' = 'AutoInstallDependencies'
-        'AUGMENT_SKIP_DEPENDENCY_INSTALL' = 'SkipDependencyInstall'
-        'AUGMENT_USE_PYTHON' = 'UsePython'
-        'AUGMENT_USE_WINDOWS' = 'UseWindows'
-        'AUGMENT_SKIP_INSTALL' = 'SkipInstall'
-        'AUGMENT_DETAILED_OUTPUT' = 'DetailedOutput'
-        'AUGMENT_INTERACTIVE' = 'Interactive'
+# Enhanced logging functions with timestamps and audit trail
+function Write-LogInfo {
+    param([string]$Message)
+    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+    Write-Host "[$timestamp] [INFO] $Message" -ForegroundColor Cyan
+    if ($script:LogFile) {
+        Add-Content -Path $script:LogFile -Value "[$timestamp] [INFO] $Message" -ErrorAction SilentlyContinue
     }
-
-    foreach ($envVar in $envMapping.Keys) {
-        $envValue = [Environment]::GetEnvironmentVariable($envVar)
-        if ($envValue) {
-            $paramName = $envMapping[$envVar]
-
-            # Handle different parameter types
-            switch ($paramName) {
-                'Operation' {
-                    # Validate operation value
-                    if ($envValue -in @("Clean", "ModifyTelemetry", "All", "Preview")) {
-                        $envParams[$paramName] = $envValue
-                    } else {
-                        Write-Warning "Invalid AUGMENT_OPERATION value: $envValue. Using default 'All'"
-                        $envParams[$paramName] = "All"
-                    }
-                }
-                default {
-                    # Handle switch parameters (convert string to boolean)
-                    if ($envValue -in @("true", "1", "yes", "on")) {
-                        $envParams[$paramName] = $true
-                    } elseif ($envValue -in @("false", "0", "no", "off")) {
-                        $envParams[$paramName] = $false
-                    } else {
-                        # Default to true for any other non-empty value
-                        $envParams[$paramName] = $true
-                    }
-                }
-            }
-        }
-    }
-
-    return $envParams
 }
 
-# Console colors
-function Write-ColoredOutput {
-    param(
-        [string]$Message,
-        [string]$Color = "White"
-    )
-    
-    $colorMap = @{
-        "Red" = "Red"
-        "Green" = "Green"
-        "Yellow" = "Yellow"
-        "Blue" = "Blue"
-        "Cyan" = "Cyan"
-        "White" = "White"
+function Write-LogSuccess {
+    param([string]$Message)
+    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+    Write-Host "[$timestamp] [SUCCESS] $Message" -ForegroundColor Green
+    if ($script:LogFile) {
+        Add-Content -Path $script:LogFile -Value "[$timestamp] [SUCCESS] $Message" -ErrorAction SilentlyContinue
     }
-    
-    if ($colorMap.ContainsKey($Color)) {
-        Write-Host $Message -ForegroundColor $colorMap[$Color]
+}
+
+function Write-LogWarning {
+    param([string]$Message)
+    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+    Write-Host "[$timestamp] [WARN] $Message" -ForegroundColor Yellow
+    if ($script:LogFile) {
+        Add-Content -Path $script:LogFile -Value "[$timestamp] [WARN] $Message" -ErrorAction SilentlyContinue
+    }
+}
+
+function Write-LogError {
+    param([string]$Message)
+    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+    Write-Host "[$timestamp] [ERROR] $Message" -ForegroundColor Red
+    if ($script:LogFile) {
+        Add-Content -Path $script:LogFile -Value "[$timestamp] [ERROR] $Message" -ErrorAction SilentlyContinue
+    }
+    if ($script:AuditLogFile) {
+        Add-Content -Path $script:AuditLogFile -Value "[$timestamp] [ERROR] $Message" -ErrorAction SilentlyContinue
+    }
+}
+
+function Write-AuditLog {
+    param([string]$Action, [string]$Details)
+    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+    $user = $env:USERNAME
+    $processId = $PID
+    $auditEntry = "[$timestamp] [PID:$processId] [USER:$user] [ACTION:$Action] $Details"
+    if ($script:AuditLogFile) {
+        Add-Content -Path $script:AuditLogFile -Value $auditEntry -ErrorAction SilentlyContinue
+    }
+}
+
+# Repository information (updated for new architecture)
+$REPO_URL = "https://gh.imixc.top/raw.githubusercontent.com/IIXINGCHEN/augment-vips/main"
+
+# Platform validation functions
+function Test-WindowsPlatform {
+    Write-LogInfo "Validating Windows platform..."
+
+    # Check Windows version
+    $osVersion = [System.Environment]::OSVersion.Version
+    if ($osVersion.Major -lt 10) {
+        Write-LogError "Windows 10 or higher required. Current version: $($osVersion.ToString())"
+        return $false
+    }
+
+    # Check PowerShell version
+    if ($PSVersionTable.PSVersion.Major -lt 5) {
+        Write-LogError "PowerShell 5.1 or higher required. Current version: $($PSVersionTable.PSVersion.ToString())"
+        return $false
+    }
+
+    Write-LogSuccess "Windows platform validation passed"
+    Write-AuditLog "PLATFORM_VALIDATE" "Windows platform validated successfully"
+    return $true
+}
+
+function Test-AdminRights {
+    Write-LogInfo "Checking administrator privileges..."
+
+    try {
+        $currentUser = [Security.Principal.WindowsIdentity]::GetCurrent()
+        $principal = New-Object Security.Principal.WindowsPrincipal($currentUser)
+        $isAdmin = $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+
+        if ($isAdmin) {
+            Write-LogWarning "Running with administrator privileges"
+            Write-LogWarning "Consider running as regular user for security"
+        } else {
+            Write-LogInfo "Running as regular user (recommended)"
+        }
+
+        Write-AuditLog "ADMIN_CHECK" "Administrator privileges: $isAdmin"
+        return $true
+    } catch {
+        Write-LogWarning "Could not determine administrator status: $($_.Exception.Message)"
+        return $true
+    }
+}
+
+# Initialize logging and project structure
+function Initialize-Environment {
+    # Get script directory and project root (handle remote execution)
+    if ([string]::IsNullOrEmpty($script:PROJECT_ROOT)) {
+        # Try multiple methods to get script path
+        $scriptPath = $MyInvocation.MyCommand.Path
+        if ([string]::IsNullOrEmpty($scriptPath)) {
+            $scriptPath = $PSCommandPath
+        }
+        if ([string]::IsNullOrEmpty($scriptPath)) {
+            $scriptPath = $MyInvocation.MyCommand.Definition
+        }
+
+        if ([string]::IsNullOrEmpty($scriptPath)) {
+            # Use current directory as fallback
+            $script:SCRIPT_DIR = Get-Location
+            $script:PROJECT_ROOT = $script:SCRIPT_DIR
+        } else {
+            $script:SCRIPT_DIR = Split-Path -Parent $scriptPath
+            $script:PROJECT_ROOT = $script:SCRIPT_DIR
+        }
     } else {
-        Write-Host $Message
+        $script:SCRIPT_DIR = $script:PROJECT_ROOT
     }
-}
 
-function Write-Info { param([string]$Message) Write-ColoredOutput "[INFO] $Message" "Blue" }
-function Write-Success { param([string]$Message) Write-ColoredOutput "[SUCCESS] $Message" "Green" }
-function Write-Warning { param([string]$Message) Write-ColoredOutput "[WARNING] $Message" "Yellow" }
-function Write-Error { param([string]$Message) Write-ColoredOutput "[ERROR] $Message" "Red" }
-
-function Show-Help {
-    Write-Host @"
-Augment VIP Remote Installation Script
-=====================================
-
-Description:
-  Universal PowerShell installation script that supports remote execution.
-  Automatically detects platform and installs the appropriate implementation.
-
-Remote Usage:
-  irm https://gh.imixc.top/raw.githubusercontent.com/IIXINGCHEN/augment-vip/main/install.ps1 | iex
-  irm $script:RawUrl/install.ps1 | iex -Operation All
-  irm $script:RawUrl/install.ps1 | iex -Operation Preview
-
-Local Usage:
-  .\install.ps1 [options]
-
-Parameters:
-  -Operation <string>           Operation to perform (Clean, ModifyTelemetry, All, Preview)
-  -NoBackup                    Skip creating backups (not recommended)
-  -AutoInstallDependencies     Automatically install missing dependencies (smart skip for installed)
-  -SkipDependencyInstall       Skip dependency installation check
-  -UsePython                   Force use of Python cross-platform implementation
-  -UseWindows                  Force use of Windows PowerShell implementation
-  -SkipInstall                 Skip installation and only run operations
-  -DetailedOutput              Enable detailed debugging output for troubleshooting
-  -Interactive                 Show interactive menu after completion (auto-detected for remote execution)
-  -Help                        Show this help information
-
-Environment Variables (for remote execution):
-  AUGMENT_OPERATION            Same as -Operation parameter
-  AUGMENT_NO_BACKUP            Same as -NoBackup (true/false, 1/0, yes/no, on/off)
-  AUGMENT_AUTO_INSTALL_DEPS    Same as -AutoInstallDependencies (true/false, 1/0, yes/no, on/off)
-  AUGMENT_SKIP_DEPENDENCY_INSTALL  Same as -SkipDependencyInstall (true/false, 1/0, yes/no, on/off)
-  AUGMENT_USE_PYTHON           Same as -UsePython (true/false, 1/0, yes/no, on/off)
-  AUGMENT_USE_WINDOWS          Same as -UseWindows (true/false, 1/0, yes/no, on/off)
-  AUGMENT_SKIP_INSTALL         Same as -SkipInstall (true/false, 1/0, yes/no, on/off)
-  AUGMENT_DETAILED_OUTPUT      Same as -DetailedOutput (true/false, 1/0, yes/no, on/off)
-  AUGMENT_INTERACTIVE          Same as -Interactive (true/false, 1/0, yes/no, on/off)
-
-Examples:
-  # Remote installation with all operations
-  irm $script:RawUrl/install.ps1 | iex -Operation All
-
-  # Remote preview without changes
-  irm $script:RawUrl/install.ps1 | iex -Operation Preview
-
-  # Smart dependency management (auto-install missing, skip installed)
-  irm $script:RawUrl/install.ps1 | iex -Operation All -AutoInstallDependencies
-
-  # Force Python implementation
-  irm $script:RawUrl/install.ps1 | iex -UsePython -Operation All
-
-  # Using environment variables for remote execution
-  `$env:AUGMENT_AUTO_INSTALL_DEPS = "true"
-  irm $script:RawUrl/install.ps1 | iex
-
-  # Multiple environment variables
-  `$env:AUGMENT_OPERATION = "All"; `$env:AUGMENT_AUTO_INSTALL_DEPS = "true"
-  irm $script:RawUrl/install.ps1 | iex
-
-  # Environment variables with detailed output
-  `$env:AUGMENT_DETAILED_OUTPUT = "true"; `$env:AUGMENT_AUTO_INSTALL_DEPS = "true"
-  irm $script:RawUrl/install.ps1 | iex
-
-Platform Support:
-  - Windows: PowerShell implementation (default) or Python fallback
-  - Linux/macOS: Python cross-platform implementation (via PowerShell Core)
-
-Note: Environment variables have lower priority than explicit parameters.
-      Explicit parameters will override environment variable settings.
-
-"@ -ForegroundColor Cyan
-}
-
-function Test-GitAvailable {
-    try {
-        $null = Get-Command git -ErrorAction Stop
-        return $true
+    # Create logs directory
+    $logDir = Join-Path $PROJECT_ROOT "logs"
+    if (-not (Test-Path $logDir)) {
+        New-Item -ItemType Directory -Path $logDir -Force | Out-Null
     }
-    catch {
-        return $false
-    }
-}
 
-function Test-PythonAvailable {
-    try {
-        $pythonVersion = python --version 2>&1
-        if ($pythonVersion -match "Python 3\.") {
+    # Set up log files
+    $timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
+    $script:LogFile = Join-Path $logDir "${SCRIPT_NAME}_${timestamp}.log"
+    $script:AuditLogFile = Join-Path $logDir "${SCRIPT_NAME}_audit_${timestamp}.log"
+
+    Write-LogInfo "Augment VIP Windows Installer v${SCRIPT_VERSION} starting..."
+    Write-LogInfo "Project root: $PROJECT_ROOT"
+    Write-AuditLog "INSTALLER_START" "Windows installer started with operation: $Operation"
+
+    # Check if we're in the correct project structure (more flexible for remote execution)
+    $platformsDir = Join-Path $PROJECT_ROOT "platforms"
+    if (-not (Test-Path $platformsDir)) {
+        Write-LogWarning "Platforms directory not found: $platformsDir"
+        Write-LogInfo "This may be normal for remote execution mode"
+
+        # For remote execution, we can continue without the full project structure
+        if (Test-RemoteExecution) {
+            Write-LogInfo "Remote execution detected - continuing with embedded functionality"
             return $true
+        } else {
+            Write-LogError "Invalid project structure. Please run from the project root directory."
+            Write-LogError "Expected to find 'platforms' directory in: $PROJECT_ROOT"
+            return $false
         }
-
-        $python3Version = python3 --version 2>&1
-        if ($python3Version -match "Python 3\.") {
-            return $true
-        }
-
-        return $false
     }
-    catch {
-        return $false
-    }
+
+    return $true
 }
 
-function Test-InteractiveSession {
-    <#
-    .SYNOPSIS
-        Detects if the current session supports interactive input
-    .DESCRIPTION
-        Checks various indicators to determine if the session can handle user interaction
-    #>
+# Enhanced dependency checking with automatic installation
+function Test-Dependencies {
+    Write-LogInfo "Checking system dependencies..."
 
-    # Check if we're in an interactive PowerShell session
-    if ([Environment]::UserInteractive -and -not [Console]::IsInputRedirected) {
-        return $true
-    }
+    $dependencies = @("sqlite3", "curl", "jq")
+    $missingDeps = @()
 
-    # Check if we have a console window
-    try {
-        $null = [Console]::WindowWidth
-        return $true
-    }
-    catch {
-        return $false
-    }
-}
+    foreach ($dep in $dependencies) {
+        if (-not (Get-Command $dep -ErrorAction SilentlyContinue)) {
+            $missingDeps += $dep
+            Write-LogWarning "Missing dependency: $dep"
+        } else {
+            Write-LogSuccess "Found dependency: $dep"
 
-function Show-PostInstallMenu {
-    <#
-    .SYNOPSIS
-        Shows an interactive menu after installation completion
-    .DESCRIPTION
-        Provides user-friendly options to continue working with Augment VIP
-    #>
-    param(
-        [string]$InstallDirectory,
-        [bool]$LastOperationSuccess = $true
-    )
-
-    Write-Host ""
-    Write-ColoredOutput "╔══════════════════════════════════════════════════════════════╗" "Cyan"
-    Write-ColoredOutput "║                    Augment VIP - 操作完成                     ║" "Cyan"
-    Write-ColoredOutput "╚══════════════════════════════════════════════════════════════╝" "Cyan"
-    Write-Host ""
-
-    if ($LastOperationSuccess) {
-        Write-Success "✓ 操作已成功完成！"
-    } else {
-        Write-Warning "⚠ 操作完成，但可能存在一些问题"
-    }
-
-    Write-Host ""
-    Write-Info "安装目录: $InstallDirectory"
-    Write-Host ""
-
-    do {
-        Write-ColoredOutput "请选择下一步操作:" "Yellow"
-        Write-Host "  [1] 重新运行清理操作 (All)"
-        Write-Host "  [2] 仅清理数据库 (Clean)"
-        Write-Host "  [3] 仅修改遥测ID (ModifyTelemetry)"
-        Write-Host "  [4] 预览模式 (Preview)"
-        Write-Host "  [5] 打开安装目录"
-        Write-Host "  [6] 显示帮助信息"
-        Write-Host "  [0] 退出"
-        Write-Host ""
-
-        $choice = Read-Host "请输入选择 (0-6)"
-
-        switch ($choice) {
-            "1" {
-                Write-Info "重新运行完整清理操作..."
-                Push-Location $InstallDirectory
-                try {
-                    & ".\scripts\augment-vip-launcher.ps1" -Operation "All"
-                    Write-Success "操作完成！"
-                } catch {
-                    Write-Error "操作失败: $($_.Exception.Message)"
-                } finally {
-                    Pop-Location
-                }
-                Write-Host ""
-            }
-            "2" {
-                Write-Info "运行数据库清理操作..."
-                Push-Location $InstallDirectory
-                try {
-                    & ".\scripts\augment-vip-launcher.ps1" -Operation "Clean"
-                    Write-Success "数据库清理完成！"
-                } catch {
-                    Write-Error "操作失败: $($_.Exception.Message)"
-                } finally {
-                    Pop-Location
-                }
-                Write-Host ""
-            }
-            "3" {
-                Write-Info "运行遥测ID修改操作..."
-                Push-Location $InstallDirectory
-                try {
-                    & ".\scripts\augment-vip-launcher.ps1" -Operation "ModifyTelemetry"
-                    Write-Success "遥测ID修改完成！"
-                } catch {
-                    Write-Error "操作失败: $($_.Exception.Message)"
-                } finally {
-                    Pop-Location
-                }
-                Write-Host ""
-            }
-            "4" {
-                Write-Info "运行预览模式..."
-                Push-Location $InstallDirectory
-                try {
-                    & ".\scripts\augment-vip-launcher.ps1" -Operation "Preview"
-                    Write-Success "预览完成！"
-                } catch {
-                    Write-Error "操作失败: $($_.Exception.Message)"
-                } finally {
-                    Pop-Location
-                }
-                Write-Host ""
-            }
-            "5" {
-                Write-Info "打开安装目录: $InstallDirectory"
-                try {
-                    if ($IsWindows -or $PSVersionTable.PSEdition -eq "Desktop") {
-                        Start-Process "explorer.exe" -ArgumentList $InstallDirectory
-                    } else {
-                        Write-Info "请手动导航到: $InstallDirectory"
+            # Basic version check for critical dependencies
+            try {
+                switch ($dep) {
+                    "sqlite3" {
+                        $version = & sqlite3 -version 2>$null
+                        if ($version) {
+                            Write-LogInfo "SQLite version: $($version.Split(' ')[0])"
+                        }
                     }
-                } catch {
-                    Write-Warning "无法自动打开目录，请手动导航到: $InstallDirectory"
+                    "curl" {
+                        $version = & curl --version 2>$null | Select-Object -First 1
+                        if ($version) {
+                            Write-LogInfo "curl version: $($version.Split(' ')[1])"
+                        }
+                    }
+                    "jq" {
+                        $version = & jq --version 2>$null
+                        if ($version) {
+                            Write-LogInfo "jq version: $version"
+                        }
+                    }
                 }
-                Write-Host ""
-            }
-            "6" {
-                Show-Help
-                Write-Host ""
-            }
-            "0" {
-                Write-Info "感谢使用 Augment VIP！"
-                return
-            }
-            default {
-                Write-Warning "无效选择，请输入 0-6 之间的数字"
-                Write-Host ""
+            } catch {
+                Write-LogWarning "Could not determine version for: $dep"
             }
         }
-    } while ($choice -ne "0")
-}
-
-function Install-Repository {
-    Write-Info "Installing Augment VIP repository..."
-    
-    if (Test-Path $script:InstallDir) {
-        Remove-Item $script:InstallDir -Recurse -Force
     }
-    
-    New-Item -ItemType Directory -Path $script:InstallDir -Force | Out-Null
-    
-    if (Test-GitAvailable) {
-        Write-Info "Using git to clone repository..."
-        try {
-            Push-Location $script:InstallDir
-            Write-Info "Cloning from: $script:RepoUrl"
-            Write-Info "Target directory: $script:InstallDir"
 
-            $gitOutput = git clone $script:RepoUrl . 2>&1
-            $gitExitCode = $LASTEXITCODE
+    if ($missingDeps.Count -gt 0) {
+        Write-LogWarning "Missing dependencies: $($missingDeps -join ', ')"
 
-            Pop-Location
+        if ($AutoInstallDeps) {
+            return Install-Dependencies $missingDeps
+        } else {
+            Write-LogInfo "To install dependencies manually:"
+            Write-LogInfo "  Using Chocolatey: choco install $($missingDeps -join ' ')"
+            Write-LogInfo "  Or run this script with -AutoInstallDeps flag"
 
-            if ($gitExitCode -eq 0) {
-                Write-Success "Repository cloned successfully"
-
-                # Verify critical files exist
-                $criticalFiles = @("scripts\augment-vip-launcher.ps1", "config\config.json")
-                $missingFiles = @()
-
-                foreach ($file in $criticalFiles) {
-                    $fullPath = Join-Path $script:InstallDir $file
-                    if (-not (Test-Path $fullPath)) {
-                        $missingFiles += $file
-                    }
-                }
-
-                if ($missingFiles.Count -gt 0) {
-                    Write-Warning "Git clone completed but some critical files are missing:"
-                    foreach ($missing in $missingFiles) {
-                        Write-Warning "  - $missing"
-                    }
-                    Write-Warning "Falling back to download method"
-                } else {
-                    return $true
-                }
+            $response = Read-Host "Install missing dependencies now? (y/N)"
+            if ($response -match '^[Yy]$') {
+                return Install-Dependencies $missingDeps
             } else {
-                Write-Warning "Git clone failed with exit code: $gitExitCode"
-                Write-Warning "Git output: $($gitOutput -join "`n")"
-                Write-Warning "Falling back to download method"
+                Write-LogError "Required dependencies not available"
+                return $false
             }
         }
-        catch {
-            Pop-Location
-            Write-Warning "Git clone failed with exception: $($_.Exception.Message)"
-            Write-Warning "Falling back to download method"
+    } else {
+        Write-LogSuccess "All dependencies are available"
+        Write-AuditLog "DEPENDENCIES_CHECK" "All dependencies validated"
+        return $true
+    }
+}
+
+# Install missing dependencies using Chocolatey
+function Install-Dependencies {
+    param([array]$MissingDeps)
+
+    Write-LogInfo "Installing missing dependencies using Chocolatey..."
+
+    # Check if Chocolatey is available
+    if (-not (Get-Command choco -ErrorAction SilentlyContinue)) {
+        Write-LogError "Chocolatey not found. Please install Chocolatey first:"
+        Write-LogError "https://chocolatey.org/install"
+        return $false
+    }
+
+    foreach ($dep in $MissingDeps) {
+        Write-LogInfo "Installing: $dep"
+        try {
+            $result = choco install $dep -y
+            if ($LASTEXITCODE -eq 0) {
+                Write-LogSuccess "Successfully installed: $dep"
+            } else {
+                Write-LogError "Failed to install: $dep"
+                return $false
+            }
+        } catch {
+            Write-LogError "Exception installing $dep`: $($_.Exception.Message)"
+            return $false
         }
     }
-    
-    # Fallback: Download individual files
-    Write-Info "Downloading repository files..."
-    try {
-        $filesToDownload = @(
-            # Main launcher and scripts
-            "scripts/augment-vip-launcher.ps1",
-            "scripts/windows/vscode-cleanup-master.ps1",
 
-            # Windows PowerShell modules
-            "scripts/windows/modules/Logger.psm1",
-            "scripts/windows/modules/DependencyManager.psm1",
-            "scripts/windows/modules/SystemDetection.psm1",
-            "scripts/windows/modules/VSCodeDiscovery.psm1",
-            "scripts/windows/modules/BackupManager.psm1",
-            "scripts/windows/modules/DatabaseCleaner.psm1",
-            "scripts/windows/modules/TelemetryModifier.psm1",
-            "scripts/windows/modules/CommonUtils.psm1",
-            "scripts/windows/modules/UnifiedServices.psm1",
-            "scripts/windows/modules/PythonBridge.psm1",
-            "scripts/windows/modules/SecureIdGenerator.psm1",
-            "scripts/windows/modules/ConfigurationCache.psm1",
+    Write-LogSuccess "All dependencies installed successfully"
+    Write-AuditLog "DEPENDENCIES_INSTALL" "Dependencies installed: $($MissingDeps -join ', ')"
+    return $true
+}
 
-            # Cross-platform Python scripts
-            "scripts/cross-platform/install.py",
-            "scripts/cross-platform/augment_vip/__init__.py",
-            "scripts/cross-platform/augment_vip/cli.py",
-            "scripts/cross-platform/augment_vip/db_cleaner.py",
-            "scripts/cross-platform/augment_vip/id_modifier.py",
-            "scripts/cross-platform/augment_vip/utils.py",
+# Legacy functions removed - now handled by platform implementations
 
-            # Common utilities
-            "scripts/common/config_loader.py",
-            "scripts/common/id_generator.py",
-            "scripts/common/transaction_manager.py",
+# Legacy script creation functions removed - now handled by platform implementations
+# Legacy embedded scripts removed - functionality now in platforms/windows.ps1
+# All legacy embedded script functionality has been moved to platforms/windows.ps1
 
-            # Linux scripts
-            "scripts/linux/install.sh",
+# Execute Windows platform implementation
+function Invoke-WindowsPlatform {
+    param([string]$Operation, [bool]$DryRun, [bool]$Verbose)
 
-            # Configuration files
-            "config/config.json",
-            "config/schema.json"
+    Write-LogInfo "Executing Windows platform implementation..."
+
+    # Check if platforms directory exists
+    $platformsDir = Join-Path $PROJECT_ROOT "platforms"
+    $windowsScript = Join-Path $platformsDir "windows.ps1"
+
+    if (Test-Path $windowsScript) {
+        # Use external Windows platform implementation
+        Write-LogInfo "Using external Windows platform implementation"
+
+        # Build command arguments using hashtable for proper parameter passing
+        $scriptArgs = @{
+            Operation = $Operation
+        }
+
+        if ($DryRun) {
+            $scriptArgs.DryRun = $true
+        }
+
+        if ($Verbose) {
+            $scriptArgs.Verbose = $true
+        }
+
+        # Execute Windows platform implementation
+        try {
+            Write-LogInfo "Executing: $windowsScript with Operation=$Operation, DryRun=$DryRun, Verbose=$Verbose"
+            & $windowsScript @scriptArgs
+
+            if ($LASTEXITCODE -eq 0) {
+                Write-LogSuccess "Windows platform implementation completed successfully"
+                Write-AuditLog "PLATFORM_EXECUTE" "Windows implementation executed: $Operation"
+                return $true
+            } else {
+                Write-LogError "Windows platform implementation failed with exit code: $LASTEXITCODE"
+                return $false
+            }
+        } catch {
+            Write-LogError "Exception executing Windows platform implementation: $($_.Exception.Message)"
+            return $false
+        }
+    } else {
+        # Use embedded implementation for remote execution
+        Write-LogInfo "Using embedded Windows platform implementation"
+        return Invoke-EmbeddedWindowsImplementation -Operation $Operation -DryRun $DryRun -Verbose $Verbose
+    }
+}
+
+# Embedded Windows implementation for remote execution
+function Invoke-EmbeddedWindowsImplementation {
+    param([string]$Operation, [bool]$DryRun, [bool]$Verbose)
+
+    Write-LogInfo "Starting embedded Windows implementation..."
+    Write-LogWarning "Using simplified embedded implementation"
+    Write-LogWarning "For full functionality, consider local installation"
+
+    # Discover VS Code installations
+    $vscodePaths = Get-EmbeddedVSCodePaths
+    if ($vscodePaths.Count -eq 0) {
+        Write-LogError "No VS Code installations found"
+        return $false
+    }
+
+    # Execute operation
+    switch ($Operation.ToLower()) {
+        "clean" {
+            return Invoke-EmbeddedDatabaseCleaning -VSCodePaths $vscodePaths -DryRun $DryRun
+        }
+        "modify-ids" {
+            return Invoke-EmbeddedTelemetryModification -VSCodePaths $vscodePaths -DryRun $DryRun
+        }
+        "all" {
+            $cleanResult = Invoke-EmbeddedDatabaseCleaning -VSCodePaths $vscodePaths -DryRun $DryRun
+            $modifyResult = Invoke-EmbeddedTelemetryModification -VSCodePaths $vscodePaths -DryRun $DryRun
+            return ($cleanResult -and $modifyResult)
+        }
+        default {
+            Write-LogError "Unknown operation: $Operation"
+            return $false
+        }
+    }
+}
+
+function Get-EmbeddedVSCodePaths {
+    Write-LogInfo "Discovering VS Code installations (embedded mode)..."
+
+    $paths = @()
+    $appData = $env:APPDATA
+    $localAppData = $env:LOCALAPPDATA
+
+    # Standard VS Code paths
+    $standardPaths = @(
+        "$appData\Code",
+        "$localAppData\Code",
+        "$appData\Code - Insiders",
+        "$localAppData\Code - Insiders"
+    )
+
+    foreach ($path in $standardPaths) {
+        if (Test-Path $path) {
+            $paths += $path
+            Write-LogInfo "Found VS Code installation: $path"
+        }
+    }
+
+    return $paths
+}
+
+function Invoke-EmbeddedDatabaseCleaning {
+    param([array]$VSCodePaths, [bool]$DryRun)
+
+    Write-LogInfo "Starting embedded database cleaning..."
+
+    $totalCleaned = 0
+    $totalErrors = 0
+
+    foreach ($basePath in $VSCodePaths) {
+        $searchPaths = @(
+            "User\workspaceStorage\*\state.vscdb",
+            "User\globalStorage\*\state.vscdb"
         )
 
-        $downloadedFiles = @()
-        $failedFiles = @()
+        foreach ($searchPath in $searchPaths) {
+            $fullPath = Join-Path $basePath $searchPath
+            $files = Get-ChildItem -Path $fullPath -ErrorAction SilentlyContinue
 
-        foreach ($file in $filesToDownload) {
-            $url = "$script:RawUrl/$file"
-            $localPath = Join-Path $script:InstallDir $file
-            $localDir = Split-Path $localPath -Parent
+            foreach ($file in $files) {
+                try {
+                    if ($DryRun) {
+                        Write-LogInfo "DRY RUN: Would clean database: $($file.FullName)"
+                        $totalCleaned++
+                    } else {
+                        # Create backup
+                        $timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
+                        $backupFile = "$($file.FullName).backup_$timestamp"
+                        Copy-Item $file.FullName $backupFile
 
-            if (-not (Test-Path $localDir)) {
-                New-Item -ItemType Directory -Path $localDir -Force | Out-Null
-            }
+                        # Clean database
+                        $cleaningQuery = "DELETE FROM ItemTable WHERE key LIKE '%augment%' OR key LIKE '%telemetry%' OR key LIKE '%machineId%' OR key LIKE '%deviceId%' OR key LIKE '%sqmId%'; VACUUM;"
+                        sqlite3 $file.FullName $cleaningQuery
 
-            Write-Info "Downloading: $file"
-            try {
-                Invoke-WebRequest -Uri $url -OutFile $localPath -UseBasicParsing
-
-                # Verify file was downloaded and has content
-                if ((Test-Path $localPath) -and (Get-Item $localPath).Length -gt 0) {
-                    $downloadedFiles += $file
-                    Write-Info "  ✓ Downloaded successfully"
-                } else {
-                    $failedFiles += $file
-                    Write-Warning "  ✗ Downloaded but file is empty or missing"
+                        if ($LASTEXITCODE -eq 0) {
+                            Write-LogSuccess "Database cleaned: $($file.FullName)"
+                            $totalCleaned++
+                        } else {
+                            Write-LogError "Failed to clean database: $($file.FullName)"
+                            $totalErrors++
+                        }
+                    }
+                } catch {
+                    Write-LogError "Exception cleaning database $($file.FullName): $($_.Exception.Message)"
+                    $totalErrors++
                 }
             }
-            catch {
-                $failedFiles += $file
-                Write-Warning "  ✗ Failed to download: $($_.Exception.Message)"
-            }
         }
-
-        Write-Info "Download summary:"
-        Write-Info "  Successfully downloaded: $($downloadedFiles.Count) files"
-        if ($failedFiles.Count -gt 0) {
-            Write-Warning "  Failed to download: $($failedFiles.Count) files"
-            foreach ($failed in $failedFiles) {
-                Write-Warning "    - $failed"
-            }
-        }
-
-        # Check if critical files are present
-        $criticalFiles = @("scripts/augment-vip-launcher.ps1")
-        $missingCritical = @()
-
-        foreach ($critical in $criticalFiles) {
-            $criticalPath = Join-Path $script:InstallDir $critical
-            if (-not (Test-Path $criticalPath)) {
-                $missingCritical += $critical
-            }
-        }
-
-        if ($missingCritical.Count -gt 0) {
-            Write-Error "Critical files missing after download:"
-            foreach ($missing in $missingCritical) {
-                Write-Error "  - $missing"
-            }
-            return $false
-        }
-
-        Write-Success "Repository files downloaded successfully"
-        return $true
     }
-    catch {
-        Write-Error "Failed to download repository: $($_.Exception.Message)"
-        return $false
-    }
+
+    Write-LogSuccess "Database cleaning completed. Processed: $totalCleaned, Errors: $totalErrors"
+    return ($totalErrors -eq 0)
 }
 
-function Invoke-AugmentVIP {
-    param(
-        [string]$Operation,
-        [bool]$CreateBackup,
-        [bool]$UsePython,
-        [bool]$UseWindows,
-        [bool]$AutoInstallDependencies = $false,
-        [bool]$SkipDependencyInstall = $false
-    )
+function Invoke-EmbeddedTelemetryModification {
+    param([array]$VSCodePaths, [bool]$DryRun)
 
-    Write-Info "Running Augment VIP Cleaner operation: $Operation"
+    Write-LogInfo "Starting embedded telemetry modification..."
 
-    Push-Location $script:InstallDir
+    $totalModified = 0
+    $totalErrors = 0
+
+    foreach ($basePath in $VSCodePaths) {
+        $searchPaths = @(
+            "User\storage.json",
+            "User\globalStorage\storage.json"
+        )
+
+        foreach ($searchPath in $searchPaths) {
+            $fullPath = Join-Path $basePath $searchPath
+
+            if (Test-Path $fullPath) {
+                try {
+                    if ($DryRun) {
+                        Write-LogInfo "DRY RUN: Would modify telemetry in: $fullPath"
+                        $totalModified++
+                    } else {
+                        # Create backup
+                        $timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
+                        $backupFile = "$fullPath.backup_$timestamp"
+                        Copy-Item $fullPath $backupFile
+
+                        # Modify telemetry IDs
+                        $content = Get-Content $fullPath -Raw | ConvertFrom-Json
+                        $content."telemetry.machineId" = -join ((1..64) | ForEach-Object { '{0:x}' -f (Get-Random -Maximum 16) })
+                        $content."telemetry.devDeviceId" = [System.Guid]::NewGuid().ToString()
+                        $content."telemetry.sqmId" = [System.Guid]::NewGuid().ToString()
+
+                        $content | ConvertTo-Json -Depth 10 | Set-Content $fullPath
+
+                        Write-LogSuccess "Telemetry modified: $fullPath"
+                        $totalModified++
+                    }
+                } catch {
+                    Write-LogError "Exception modifying telemetry $fullPath`: $($_.Exception.Message)"
+                    $totalErrors++
+                }
+            }
+        }
+    }
+
+    Write-LogSuccess "Telemetry modification completed. Modified: $totalModified, Errors: $totalErrors"
+    return ($totalErrors -eq 0)
+}
+
+# Show help information
+function Show-Help {
+    Write-Host @"
+Augment VIP - Windows Installer v$SCRIPT_VERSION
+
+DESCRIPTION:
+    Enterprise-grade Windows installer for VS Code Augment cleaning and telemetry modification.
+    Integrates with the new cross-platform modular architecture.
+
+USAGE:
+    .\install.ps1 [OPTIONS]
+
+OPTIONS:
+    -Operation <operation>     Specify operation to perform (default: help)
+    -DryRun                   Perform a dry run without making changes
+    -Verbose                  Enable verbose output and detailed logging
+    -AutoInstallDeps          Automatically install missing dependencies
+    -Help                     Show this help message
+
+OPERATIONS:
+    clean                     Clean VS Code databases (remove Augment entries)
+    modify-ids                Modify VS Code telemetry IDs
+    all                       Perform both cleaning and ID modification
+    help                      Show this help message
+
+EXAMPLES:
+    .\install.ps1 -Operation clean
+    .\install.ps1 -Operation modify-ids -DryRun
+    .\install.ps1 -Operation all -Verbose -AutoInstallDeps
+
+REQUIREMENTS:
+    - Windows 10 or higher
+    - PowerShell 5.1 or higher
+    - SQLite3, curl, jq (auto-installable via Chocolatey)
+
+SECURITY FEATURES:
+    - Automatic backup creation before modifications
+    - Input validation and sanitization
+    - Audit logging for all operations
+    - Integrity verification of modified files
+
+NOTES:
+    - Close VS Code before running operations
+    - All operations are logged for audit purposes
+    - Backups are created automatically before modifications
+    - Use -DryRun to preview changes without applying them
+
+For more information, visit: https://github.com/IIXINGCHEN/augment-vip
+
+"@ -ForegroundColor Green
+}
+
+# Remote execution detection and handling
+function Test-RemoteExecution {
+    # Check if we're running from a remote source (piped execution)
+    $isRemote = $false
 
     try {
-        # Use Join-Path for cross-platform compatibility
-        $launcherScript = Join-Path "scripts" "augment-vip-launcher.ps1"
-        $fullLauncherPath = Join-Path $script:InstallDir $launcherScript
+        # Try multiple methods to get script path
+        $scriptPath = $MyInvocation.MyCommand.Path
+        if ([string]::IsNullOrEmpty($scriptPath)) {
+            $scriptPath = $PSCommandPath
+        }
+        if ([string]::IsNullOrEmpty($scriptPath)) {
+            $scriptPath = $MyInvocation.MyCommand.Definition
+        }
 
-        Write-Info "Current directory: $(Get-Location)"
-        Write-Info "Looking for launcher script at: $launcherScript"
-        Write-Info "Full launcher path: $fullLauncherPath"
+        Write-Verbose "Script path: $scriptPath"
 
-        if (-not (Test-Path $launcherScript)) {
-            Write-Error "Launcher script not found: $launcherScript"
-            Write-Info "Listing contents of current directory:"
-            Get-ChildItem -Path . -Recurse -Name | ForEach-Object { Write-Info "  $_" }
+        if ([string]::IsNullOrEmpty($scriptPath)) {
+            # No script path usually means piped execution
+            Write-Verbose "No script path - checking current directory for project structure"
 
-            Write-Info "Checking if scripts directory exists:"
-            if (Test-Path "scripts") {
-                Write-Info "Scripts directory found. Contents:"
-                Get-ChildItem -Path "scripts" -Recurse -Name | ForEach-Object { Write-Info "  scripts\$_" }
+            # Check if we're in a project directory
+            $currentDir = Get-Location
+            $platformsDir = Join-Path $currentDir.Path "platforms"
+            $coreDir = Join-Path $currentDir.Path "core"
+
+            if ((Test-Path $platformsDir) -or (Test-Path $coreDir)) {
+                Write-Verbose "Project structure found in current directory - local execution"
+                $isRemote = $false
             } else {
-                Write-Warning "Scripts directory not found"
+                Write-Verbose "No project structure in current directory - likely piped execution"
+                $isRemote = $true
             }
+        } elseif ($scriptPath -match "^http" -or $scriptPath -match "TemporaryFile") {
+            Write-Verbose "Script path indicates remote source"
+            $isRemote = $true
+        } elseif ($scriptPath -match "Temp\\.*\.ps1$") {
+            # Script is in temp directory with .ps1 extension (likely downloaded)
+            Write-Verbose "Script in temp directory"
+            $isRemote = $true
+        } else {
+            # Check if platforms directory exists relative to script
+            $scriptDir = Split-Path -Parent $scriptPath
+            $platformsDir = Join-Path $scriptDir "platforms"
+            Write-Verbose "Checking platforms directory: $platformsDir"
 
-            return $false
+            if (Test-Path $platformsDir) {
+                Write-Verbose "Platforms directory found - local execution"
+                $isRemote = $false
+            } else {
+                Write-Verbose "Platforms directory not found"
+                # This might be remote execution if platforms directory doesn't exist
+                # But only if we're also not in a development environment
+                $gitDir = Join-Path $scriptDir ".git"
+                $coreDir = Join-Path $scriptDir "core"
+                Write-Verbose "Checking git dir: $gitDir, core dir: $coreDir"
+
+                if (-not (Test-Path $gitDir) -and -not (Test-Path $coreDir)) {
+                    Write-Verbose "Neither git nor core directory found - assuming remote"
+                    $isRemote = $true
+                } else {
+                    Write-Verbose "Development environment detected - local execution"
+                    $isRemote = $false
+                }
+            }
         }
-
-        $params = @{
-            "Operation" = $Operation
-        }
-
-        if (-not $CreateBackup) {
-            $params["NoBackup"] = $true
-        }
-
-        if ($UsePython) {
-            $params["UsePython"] = $true
-        }
-
-        if ($UseWindows) {
-            $params["UseWindows"] = $true
-        }
-
-        if ($AutoInstallDependencies) {
-            $params["AutoInstallDependencies"] = $true
-        }
-
-        if ($SkipDependencyInstall) {
-            $params["SkipDependencyInstall"] = $true
-        }
-
-        Write-Info "Executing launcher script with parameters: $($params.Keys -join ', ')"
-        & $launcherScript @params
-        $success = $LASTEXITCODE -eq 0
-
-        Pop-Location
-        return $success
+    } catch {
+        # If we can't determine, assume local for safety
+        Write-Verbose "Exception in remote detection: $($_.Exception.Message)"
+        $isRemote = $false
     }
-    catch {
-        Pop-Location
-        Write-Error "Failed to execute Augment VIP: $($_.Exception.Message)"
-        return $false
-    }
+
+    Write-Verbose "Remote execution detected: $isRemote"
+    return $isRemote
 }
 
-function Main {
-    # Detect environment variables and merge with explicit parameters
-    $envParams = Get-EnvironmentParameters
+function Initialize-RemoteExecution {
+    Write-LogInfo "Detected remote execution mode"
+    Write-LogInfo "Downloading project files for full functionality..."
 
-    # Merge environment parameters with explicit parameters (explicit takes precedence)
-    foreach ($envParam in $envParams.Keys) {
-        $currentValue = Get-Variable -Name $envParam -ValueOnly -ErrorAction SilentlyContinue
+    # Create temporary working directory
+    $tempDir = Join-Path $env:TEMP "augment-vip-$(Get-Date -Format 'yyyyMMdd-HHmmss')"
+    New-Item -ItemType Directory -Path $tempDir -Force | Out-Null
 
-        # Only use environment variable if explicit parameter wasn't provided
-        switch ($envParam) {
-            'Operation' {
-                if ($Operation -eq "All" -and $envParams[$envParam] -ne "All") {
-                    # Default value wasn't changed, use environment variable
-                    $script:Operation = $envParams[$envParam]
-                }
-            }
-            'NoBackup' {
-                if (-not $NoBackup -and $envParams[$envParam]) {
-                    $script:NoBackup = $envParams[$envParam]
-                }
-            }
-            'AutoInstallDependencies' {
-                if (-not $AutoInstallDependencies -and $envParams[$envParam]) {
-                    $script:AutoInstallDependencies = $envParams[$envParam]
-                }
-            }
-            'SkipDependencyInstall' {
-                if (-not $SkipDependencyInstall -and $envParams[$envParam]) {
-                    $script:SkipDependencyInstall = $envParams[$envParam]
-                }
-            }
-            'UsePython' {
-                if (-not $UsePython -and $envParams[$envParam]) {
-                    $script:UsePython = $envParams[$envParam]
-                }
-            }
-            'UseWindows' {
-                if (-not $UseWindows -and $envParams[$envParam]) {
-                    $script:UseWindows = $envParams[$envParam]
-                }
-            }
-            'SkipInstall' {
-                if (-not $SkipInstall -and $envParams[$envParam]) {
-                    $script:SkipInstall = $envParams[$envParam]
-                }
-            }
-            'DetailedOutput' {
-                if (-not $DetailedOutput -and $envParams[$envParam]) {
-                    $script:DetailedOutput = $envParams[$envParam]
-                }
-            }
-            'Interactive' {
-                if (-not $Interactive -and $envParams[$envParam]) {
-                    $script:Interactive = $envParams[$envParam]
-                }
-            }
+    # Set project root to temp directory
+    $script:PROJECT_ROOT = $tempDir
+
+    # Download essential files
+    $essentialFiles = @(
+        "platforms/windows.ps1",
+        "config/settings.json",
+        "config/security.json"
+    )
+
+    foreach ($file in $essentialFiles) {
+        $url = "$REPO_URL/$file"
+        $localPath = Join-Path $tempDir $file
+        $localDir = Split-Path $localPath -Parent
+
+        if (-not (Test-Path $localDir)) {
+            New-Item -ItemType Directory -Path $localDir -Force | Out-Null
+        }
+
+        try {
+            Write-LogInfo "Downloading: $file"
+            Invoke-WebRequest -Uri $url -OutFile $localPath -UseBasicParsing
+            Write-LogSuccess "Downloaded: $file"
+        } catch {
+            Write-LogWarning "Failed to download $file`: $($_.Exception.Message)"
+            Write-LogInfo "Continuing with embedded functionality..."
         }
     }
 
-    if ($Help) {
+    Write-LogSuccess "Remote execution environment initialized"
+    Write-AuditLog "REMOTE_INIT" "Remote execution initialized in: $tempDir"
+
+    return $true
+}
+
+# Main execution function
+function Main {
+    Write-LogInfo "Starting Augment VIP Windows installer v${SCRIPT_VERSION}"
+
+    # Show help if requested
+    if ($Help -or $Operation -eq "help") {
         Show-Help
         return 0
     }
 
-    # Enable detailed output if requested (after environment variable processing)
-    if ($DetailedOutput) {
-        $VerbosePreference = "Continue"
-        Write-Info "Detailed output mode enabled"
-
-        # Show parameter sources when detailed output is enabled
-        if ($envParams.Count -gt 0) {
-            Write-Info "Environment variables detected:"
-            foreach ($envParam in $envParams.Keys) {
-                Write-Info "  $envParam = $($envParams[$envParam])"
-            }
-        }
-    }
-
-    Write-Info "Augment VIP Cleaner Remote Installer v1.0.0"
-    Write-Info "======================================"
-    Write-Info "Repository: $script:RepoUrl"
-    Write-Info "Install Directory: $script:InstallDir"
-
-    if ($DetailedOutput) {
-        Write-Info "System Information:"
-        Write-Info "  PowerShell Version: $($PSVersionTable.PSVersion)"
-        Write-Info "  OS: $($PSVersionTable.OS)"
-        Write-Info "  Platform: $($PSVersionTable.Platform)"
-        Write-Info "  Current User: $($env:USERNAME)"
-        Write-Info "  Temp Directory: $($env:TEMP)"
-    }
-    
-    if (-not $SkipInstall) {
-        # Install repository
-        if (-not (Install-Repository)) {
-            Write-Error "Installation failed"
+    # Check for remote execution and handle accordingly
+    if (Test-RemoteExecution) {
+        if (-not (Initialize-RemoteExecution)) {
+            Write-LogError "Remote execution initialization failed"
             return 1
         }
     }
-    
-    # Run operations
-    $createBackup = -not $NoBackup
-    
-    Write-Info "Configuration:"
-    Write-Info "  Operation: $Operation"
-    Write-Info "  Create Backup: $createBackup"
-    Write-Info "  Auto Install Dependencies: $AutoInstallDependencies"
-    Write-Info "  Skip Dependency Install: $SkipDependencyInstall"
-    Write-Info "  Force Python: $UsePython"
-    Write-Info "  Force Windows: $UseWindows"
 
-    $success = Invoke-AugmentVIP -Operation $Operation -CreateBackup $createBackup -UsePython $UsePython -UseWindows $UseWindows -AutoInstallDependencies $AutoInstallDependencies -SkipDependencyInstall $SkipDependencyInstall
-
-    # Determine if we should show interactive menu
-    $shouldShowMenu = $false
-
-    if ($Interactive) {
-        # Explicitly requested interactive mode
-        $shouldShowMenu = $true
-    } elseif (-not $Interactive -and (Test-InteractiveSession)) {
-        # Auto-detect: show menu for interactive sessions unless explicitly disabled
-        $shouldShowMenu = $true
+    # Initialize environment
+    if (-not (Initialize-Environment)) {
+        Write-LogError "Environment initialization failed"
+        return 1
     }
 
-    if ($success) {
-        Write-Success "Operation completed successfully!"
+    # Validate Windows platform
+    if (-not (Test-WindowsPlatform)) {
+        Write-LogError "Windows platform validation failed"
+        return 1
+    }
 
-        if ($shouldShowMenu) {
-            # Show interactive menu
-            Show-PostInstallMenu -InstallDirectory $script:InstallDir -LastOperationSuccess $true
-        } else {
-            # Traditional output for non-interactive sessions
-            Write-Info ""
-            Write-Info "Installation directory: $script:InstallDir"
-            Write-Info "You can run operations again with:"
-            Write-Info "  cd '$script:InstallDir'"
-            Write-Info "  .\scripts\augment-vip-launcher.ps1 -Operation <operation>"
-        }
+    # Check administrator rights (warn only)
+    Test-AdminRights | Out-Null
+
+    # Test dependencies
+    if (-not (Test-Dependencies)) {
+        Write-LogError "Dependency validation failed"
+        return 1
+    }
+
+    # Execute Windows platform implementation
+    if (Invoke-WindowsPlatform -Operation $Operation -DryRun $DryRun -Verbose $Verbose) {
+        Write-LogSuccess "Augment VIP operation completed successfully"
+        Write-AuditLog "INSTALLER_COMPLETE" "Installation completed successfully: $Operation"
         return 0
     } else {
-        Write-Error "Operation failed"
-
-        if ($shouldShowMenu) {
-            # Show interactive menu even on failure for troubleshooting
-            Show-PostInstallMenu -InstallDirectory $script:InstallDir -LastOperationSuccess $false
-        } else {
-            Write-Info ""
-            Write-Info "Installation directory: $script:InstallDir"
-            Write-Info "You can try running operations manually with:"
-            Write-Info "  cd '$script:InstallDir'"
-            Write-Info "  .\scripts\augment-vip-launcher.ps1 -Operation <operation>"
-        }
+        Write-LogError "Augment VIP operation failed"
+        Write-AuditLog "INSTALLER_FAILED" "Installation failed: $Operation"
         return 1
     }
 }
 
-# Execute main function
-exit (Main)
+# Main script execution
+try {
+    $exitCode = Main
+    Write-LogInfo "Script execution completed with exit code: $exitCode"
+    exit $exitCode
+} catch {
+    Write-LogError "Unhandled exception: $($_.Exception.Message)"
+    Write-LogError "Stack trace: $($_.ScriptStackTrace)"
+    Write-AuditLog "INSTALLER_EXCEPTION" "Unhandled exception: $($_.Exception.Message)"
+    exit 1
+}

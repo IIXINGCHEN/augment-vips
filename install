@@ -1,0 +1,435 @@
+#!/bin/bash
+# install
+#
+# Enterprise-grade unified cross-platform entry point for Augment VIP
+# Production-ready with automatic platform detection and routing
+# Zero-redundancy architecture with comprehensive error handling
+
+set -euo pipefail
+
+# Script metadata
+readonly SCRIPT_VERSION="1.0.0"
+readonly SCRIPT_NAME="augment-vip-unified"
+
+# Get script directory
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Default configuration
+DEFAULT_OPERATION="help"
+DRY_RUN=false
+VERBOSE=false
+CONFIG_FILE="config/settings.json"
+FORCE_PLATFORM=""
+
+# Color codes for output
+readonly COLOR_RED='\033[0;31m'
+readonly COLOR_GREEN='\033[0;32m'
+readonly COLOR_YELLOW='\033[1;33m'
+readonly COLOR_BLUE='\033[0;34m'
+readonly COLOR_CYAN='\033[0;36m'
+readonly COLOR_RESET='\033[0m'
+
+# Logging functions (minimal implementation for bootstrap)
+log_info() {
+    echo -e "${COLOR_CYAN}[INFO]${COLOR_RESET} $1"
+}
+
+log_success() {
+    echo -e "${COLOR_GREEN}[SUCCESS]${COLOR_RESET} $1"
+}
+
+log_warn() {
+    echo -e "${COLOR_YELLOW}[WARN]${COLOR_RESET} $1"
+}
+
+log_error() {
+    echo -e "${COLOR_RED}[ERROR]${COLOR_RESET} $1" >&2
+}
+
+# Parse command line arguments
+parse_arguments() {
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --operation|-o)
+                OPERATION="$2"
+                shift 2
+                ;;
+            --dry-run|-d)
+                DRY_RUN=true
+                shift
+                ;;
+            --verbose|-v)
+                VERBOSE=true
+                shift
+                ;;
+            --config|-c)
+                CONFIG_FILE="$2"
+                shift 2
+                ;;
+            --platform|-p)
+                FORCE_PLATFORM="$2"
+                shift 2
+                ;;
+            --help|-h)
+                show_help
+                exit 0
+                ;;
+            --version)
+                echo "Augment VIP v${SCRIPT_VERSION}"
+                exit 0
+                ;;
+            *)
+                log_error "Unknown argument: $1"
+                show_help
+                exit 1
+                ;;
+        esac
+    done
+    
+    # Set default operation if not specified
+    OPERATION="${OPERATION:-${DEFAULT_OPERATION}}"
+}
+
+# Detect operating system platform
+detect_platform() {
+    local platform=""
+    
+    if [[ -n "${FORCE_PLATFORM}" ]]; then
+        platform="${FORCE_PLATFORM}"
+        log_info "Platform forced to: ${platform}"
+    else
+        case "$(uname -s)" in
+            Linux*)
+                platform="linux"
+                ;;
+            Darwin*)
+                platform="macos"
+                ;;
+            CYGWIN*|MINGW*|MSYS*)
+                platform="windows"
+                ;;
+            *)
+                log_error "Unsupported platform: $(uname -s)"
+                return 1
+                ;;
+        esac
+        
+        log_info "Detected platform: ${platform}"
+    fi
+    
+    echo "${platform}"
+}
+
+# Validate platform implementation exists
+validate_platform_implementation() {
+    local platform="$1"
+    local implementation_file=""
+    
+    case "${platform}" in
+        "windows")
+            implementation_file="${SCRIPT_DIR}/platforms/windows.ps1"
+            ;;
+        "linux")
+            implementation_file="${SCRIPT_DIR}/platforms/linux.sh"
+            ;;
+        "macos")
+            implementation_file="${SCRIPT_DIR}/platforms/macos.sh"
+            ;;
+        *)
+            log_error "Unknown platform: ${platform}"
+            return 1
+            ;;
+    esac
+    
+    if [[ ! -f "${implementation_file}" ]]; then
+        log_error "Platform implementation not found: ${implementation_file}"
+        return 1
+    fi
+    
+    if [[ ! -x "${implementation_file}" ]]; then
+        log_info "Making platform implementation executable: ${implementation_file}"
+        chmod +x "${implementation_file}"
+    fi
+    
+    log_success "Platform implementation validated: ${implementation_file}"
+    echo "${implementation_file}"
+}
+
+# Check core modules availability
+check_core_modules() {
+    log_info "Checking core modules availability..."
+    
+    local core_dir="${SCRIPT_DIR}/core"
+    if [[ ! -d "${core_dir}" ]]; then
+        log_error "Core modules directory not found: ${core_dir}"
+        return 1
+    fi
+    
+    local required_modules=(
+        "common.sh"
+        "platform.sh"
+        "security.sh"
+        "validation.sh"
+        "dependencies.sh"
+        "paths.sh"
+        "database.sh"
+        "telemetry.sh"
+        "backup.sh"
+        "logging.sh"
+    )
+    
+    local missing_modules=()
+    
+    for module in "${required_modules[@]}"; do
+        local module_path="${core_dir}/${module}"
+        if [[ ! -f "${module_path}" ]]; then
+            missing_modules+=("${module}")
+        fi
+    done
+    
+    if [[ ${#missing_modules[@]} -gt 0 ]]; then
+        log_error "Missing core modules: ${missing_modules[*]}"
+        return 1
+    fi
+    
+    log_success "All core modules are available"
+    return 0
+}
+
+# Check project structure
+check_project_structure() {
+    log_info "Checking project structure..."
+    
+    local required_dirs=(
+        "core"
+        "platforms"
+        "config"
+        "logs"
+        "docs"
+    )
+    
+    local missing_dirs=()
+    
+    for dir in "${required_dirs[@]}"; do
+        local dir_path="${SCRIPT_DIR}/${dir}"
+        if [[ ! -d "${dir_path}" ]]; then
+            missing_dirs+=("${dir}")
+        fi
+    done
+    
+    if [[ ${#missing_dirs[@]} -gt 0 ]]; then
+        log_warn "Missing directories (will be created): ${missing_dirs[*]}"
+        
+        # Create missing directories
+        for dir in "${missing_dirs[@]}"; do
+            local dir_path="${SCRIPT_DIR}/${dir}"
+            mkdir -p "${dir_path}"
+            log_info "Created directory: ${dir_path}"
+        done
+    fi
+    
+    log_success "Project structure validated"
+    return 0
+}
+
+# Execute platform-specific implementation
+execute_platform_implementation() {
+    local platform="$1"
+    local implementation_file="$2"
+    local operation="$3"
+    local dry_run="$4"
+    local verbose="$5"
+    
+    log_info "Executing ${platform} implementation..."
+    
+    # Build command arguments
+    local args=()
+    
+    case "${platform}" in
+        "windows")
+            # PowerShell execution
+            args+=("powershell.exe" "-ExecutionPolicy" "Bypass" "-File" "${implementation_file}")
+            args+=("-Operation" "${operation}")
+            if [[ "${dry_run}" == "true" ]]; then
+                args+=("-DryRun")
+            fi
+            if [[ "${verbose}" == "true" ]]; then
+                args+=("-Verbose")
+            fi
+            ;;
+        "linux"|"macos")
+            # Bash execution
+            args+=("${implementation_file}")
+            args+=("--operation" "${operation}")
+            if [[ "${dry_run}" == "true" ]]; then
+                args+=("--dry-run")
+            fi
+            if [[ "${verbose}" == "true" ]]; then
+                args+=("--verbose")
+            fi
+            ;;
+    esac
+    
+    # Execute platform implementation
+    log_info "Executing command: ${args[*]}"
+    
+    if "${args[@]}"; then
+        log_success "Platform implementation completed successfully"
+        return 0
+    else
+        local exit_code=$?
+        log_error "Platform implementation failed with exit code: ${exit_code}"
+        return ${exit_code}
+    fi
+}
+
+# Show system information
+show_system_info() {
+    log_info "System Information:"
+    echo "  OS: $(uname -s)"
+    echo "  Kernel: $(uname -r)"
+    echo "  Architecture: $(uname -m)"
+    echo "  Hostname: $(hostname)"
+    echo "  User: ${USER:-unknown}"
+    echo "  Shell: ${SHELL:-unknown}"
+    echo "  Working Directory: $(pwd)"
+    echo "  Script Directory: ${SCRIPT_DIR}"
+}
+
+# Main execution function
+main() {
+    local operation="$1"
+    local dry_run="$2"
+    local verbose="$3"
+    
+    log_info "Starting Augment VIP unified launcher v${SCRIPT_VERSION}"
+    
+    if [[ "${verbose}" == "true" ]]; then
+        show_system_info
+    fi
+    
+    # Check project structure
+    if ! check_project_structure; then
+        log_error "Project structure validation failed"
+        return 1
+    fi
+    
+    # Check core modules
+    if ! check_core_modules; then
+        log_error "Core modules validation failed"
+        return 1
+    fi
+    
+    # Detect platform
+    local platform
+    if ! platform=$(detect_platform); then
+        log_error "Platform detection failed"
+        return 1
+    fi
+    
+    # Validate platform implementation
+    local implementation_file
+    if ! implementation_file=$(validate_platform_implementation "${platform}"); then
+        log_error "Platform implementation validation failed"
+        return 1
+    fi
+    
+    # Execute platform-specific implementation
+    if execute_platform_implementation "${platform}" "${implementation_file}" "${operation}" "${dry_run}" "${verbose}"; then
+        log_success "Augment VIP operation completed successfully"
+        return 0
+    else
+        log_error "Augment VIP operation failed"
+        return 1
+    fi
+}
+
+# Show help information
+show_help() {
+    cat << EOF
+Augment VIP - Unified Cross-Platform Launcher v${SCRIPT_VERSION}
+
+DESCRIPTION:
+    Enterprise-grade VS Code Augment cleaning and telemetry modification tool.
+    Automatically detects your platform and executes the appropriate implementation.
+
+USAGE:
+    $0 [OPTIONS]
+
+OPTIONS:
+    -o, --operation OPERATION   Specify operation to perform (default: help)
+    -d, --dry-run              Perform a dry run without making changes
+    -v, --verbose              Enable verbose output and system information
+    -c, --config FILE          Specify configuration file (default: config/settings.json)
+    -p, --platform PLATFORM    Force specific platform (windows, linux, macos)
+    -h, --help                 Show this help message
+        --version              Show version information
+
+OPERATIONS:
+    clean                      Clean VS Code databases (remove Augment entries)
+    modify-ids                 Modify VS Code telemetry IDs
+    all                        Perform both cleaning and ID modification
+    help                       Show this help message
+
+EXAMPLES:
+    $0 --operation clean
+    $0 --operation modify-ids --dry-run
+    $0 --operation all --verbose
+    $0 --platform windows --operation clean
+
+SUPPORTED PLATFORMS:
+    Windows                    PowerShell 5.1+, Chocolatey package manager
+    Linux                      Bash 4.0+, apt/dnf/yum package managers
+    macOS                      Bash 4.0+, Homebrew package manager
+
+REQUIREMENTS:
+    - VS Code installed and run at least once
+    - Platform-specific dependencies (auto-installable):
+      * sqlite3, curl, jq
+    - Appropriate permissions for file modification
+
+SECURITY FEATURES:
+    - Automatic backup creation before modifications
+    - Input validation and sanitization
+    - Audit logging for all operations
+    - Integrity verification of modified files
+
+NOTES:
+    - Close VS Code before running operations
+    - All operations are logged for audit purposes
+    - Backups are created automatically before modifications
+    - Use --dry-run to preview changes without applying them
+
+For more information, visit: https://github.com/IIXINGCHEN/augment-vip
+
+EOF
+}
+
+# Cleanup function
+cleanup() {
+    # Minimal cleanup for launcher
+    if [[ -n "${TEMP_FILES:-}" ]]; then
+        for temp_file in ${TEMP_FILES}; do
+            if [[ -f "${temp_file}" ]]; then
+                rm -f "${temp_file}"
+            fi
+        done
+    fi
+}
+
+# Set up signal handlers
+trap cleanup EXIT
+trap 'log_error "Script interrupted"; exit 130' INT TERM
+
+# Main script execution
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+    # Parse command line arguments
+    parse_arguments "$@"
+    
+    # Execute main function
+    if main "${OPERATION}" "${DRY_RUN}" "${VERBOSE}"; then
+        exit 0
+    else
+        exit 1
+    fi
+fi

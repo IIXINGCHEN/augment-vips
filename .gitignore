@@ -1,18 +1,14 @@
 # Logs
-logs/
-*.log
-*.log.*
+logs/*.log
+logs/*.audit
 
 # Temporary files
 *.tmp
 *.temp
-*_temp.*
-*_tmp.*
 
 # Backup files
-*.bak
 *.backup
-data/backups/
+*.bak
 
 # OS generated files
 .DS_Store
@@ -23,17 +19,11 @@ data/backups/
 ehthumbs.db
 Thumbs.db
 
-# Windows
-desktop.ini
-
 # IDE files
-.vscode/settings.json
-.vscode/launch.json
-.vscode/tasks.json
+.vscode/
 .idea/
 *.swp
 *.swo
-*~
 
 # Python
 __pycache__/
@@ -56,47 +46,16 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
-MANIFEST
+
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
 
 # PowerShell
 *.ps1xml
 
-# Audit and task files
-*_audit_*.md
-*_task_*.md
-audit_report*.md
-task_*.md
-
 # Test results
-test_results/
+test-results/
 coverage/
-.coverage
-.pytest_cache/
-.tox/
-
-# Environment files
-.env
-.env.local
-.env.*.local
-
-# Package managers
-node_modules/
-package-lock.json
-yarn.lock
-
-# Compiled binaries
-*.exe
-*.dll
-*.so
-*.dylib
-
-# Archives
-*.zip
-*.tar.gz
-*.rar
-*.7z
-
-# Local configuration overrides
-config/local.json
-config/dev.json
-config/test.json
