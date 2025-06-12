@@ -731,13 +731,68 @@ function Main {
     }
 }
 
-# Check if we should pause for user interaction (remote execution)
+# Check if we should pause for user interaction
 function Test-ShouldPauseForUser {
-    # Check if this is remote execution and interactive
-    $isRemote = Test-RemoteExecution
-    $isInteractive = [Environment]::UserInteractive
+    # More reliable detection for when to pause
+    try {
+        # Check if we're in an interactive PowerShell session
+        $isInteractive = $true
 
-    return ($isRemote -and $isInteractive)
+        # Check if we're running in a console that supports user input
+        if ($Host.Name -eq "ConsoleHost" -or $Host.Name -eq "Windows PowerShell ISE Host") {
+            $isInteractive = $true
+        }
+
+        # Check if this appears to be a remote execution (piped from irm)
+        $isRemote = Test-RemoteExecution
+
+        # For remote execution, we should always pause to show results
+        # For local execution, we can skip pausing
+        $shouldPause = $isRemote -and $isInteractive
+
+        Write-Verbose "Pause check: Remote=$isRemote, Interactive=$isInteractive, ShouldPause=$shouldPause"
+        return $shouldPause
+
+    } catch {
+        # If detection fails, err on the side of pausing for better UX
+        Write-Verbose "Pause detection failed, defaulting to pause: $($_.Exception.Message)"
+        return $true
+    }
+}
+
+# Safe pause function with multiple fallback methods
+function Invoke-SafePause {
+    param([string]$Message = "Press Enter to continue...")
+
+    try {
+        Write-Host $Message -ForegroundColor Yellow
+
+        # Try Read-Host first (most compatible)
+        try {
+            Read-Host | Out-Null
+            return
+        } catch {
+            Write-Verbose "Read-Host failed: $($_.Exception.Message)"
+        }
+
+        # Try ReadKey as fallback
+        try {
+            if ($Host.UI.RawUI) {
+                $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
+                return
+            }
+        } catch {
+            Write-Verbose "ReadKey failed: $($_.Exception.Message)"
+        }
+
+        # Final fallback - just wait a bit
+        Write-Host "Waiting 3 seconds..." -ForegroundColor Yellow
+        Start-Sleep -Seconds 3
+
+    } catch {
+        Write-Verbose "All pause methods failed: $($_.Exception.Message)"
+        # Don't throw - just continue
+    }
 }
 
 # Display execution summary
@@ -779,12 +834,10 @@ try {
         Show-ExecutionSummary -ExitCode $exitCode
 
         if ($exitCode -eq 0) {
-            Write-Host "Press any key to exit..." -ForegroundColor Green
+            Invoke-SafePause -Message "✅ Operation completed successfully! Press Enter to exit..."
         } else {
-            Write-Host "Press any key to exit..." -ForegroundColor Red
+            Invoke-SafePause -Message "❌ Operation failed! Press Enter to exit..."
         }
-
-        $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
     }
 
     exit $exitCode
@@ -797,8 +850,7 @@ try {
     if (Test-ShouldPauseForUser) {
         Show-ExecutionSummary -ExitCode 1
         Write-Host "EXCEPTION: $($_.Exception.Message)" -ForegroundColor Red
-        Write-Host "Press any key to exit..." -ForegroundColor Red
-        $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
+        Invoke-SafePause -Message "❌ Exception occurred! Press Enter to exit..."
     }
 
     exit 1
