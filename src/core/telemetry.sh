@@ -1,4 +1,16 @@
 #!/bin/bash
+# telemetry.sh
+#
+# Auto-fixed for readonly variable conflicts
+
+# Prevent multiple loading
+if [[ "${TELEMETRY_SH_LOADED:-}" == "true" ]]; then
+    return 0
+fi
+if [[ -z "${TELEMETRY_SH_LOADED:-}" ]]; then
+    readonly TELEMETRY_SH_LOADED="true"
+fi
+
 # core/telemetry.sh
 #
 # Enterprise-grade telemetry ID processing module
@@ -14,15 +26,23 @@ source "$(dirname "${BASH_SOURCE[0]}")/validation.sh"
 source "$(dirname "${BASH_SOURCE[0]}")/backup.sh"
 
 # Telemetry constants
-readonly TELEMETRY_FIELDS=(
-    "telemetry.machineId"
-    "telemetry.devDeviceId"
-    "telemetry.sqmId"
-)
+if [[ -z "${TELEMETRY_FIELDS:-}" ]]; then
+    readonly TELEMETRY_FIELDS=(
+        "telemetry.machineId"
+        "telemetry.devDeviceId"
+        "telemetry.sqmId"
+    )
+fi
 
-readonly MACHINE_ID_LENGTH=64
-readonly UUID_PATTERN='^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
-readonly HEX_PATTERN='^[0-9a-fA-F]+$'
+if [[ -z "${MACHINE_ID_LENGTH:-}" ]]; then
+    readonly MACHINE_ID_LENGTH=64
+fi
+if [[ -z "${UUID_PATTERN:-}" ]]; then
+    readonly UUID_PATTERN='^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
+fi
+if [[ -z "${HEX_PATTERN:-}" ]]; then
+    readonly HEX_PATTERN='^[0-9a-fA-F]+$'
+fi
 
 # Global telemetry statistics
 declare -A TELEMETRY_STATS=()

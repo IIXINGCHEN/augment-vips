@@ -301,6 +301,78 @@
     "encryption_at_rest": false,
     "access_logging": true
   },
+
+  "migration": {
+    "enabled": true,
+    "backup_before_migration": true,
+    "validate_after_migration": true,
+    "batch_size": 1000,
+    "timeout_seconds": 300,
+    "dry_run_default": false,
+    "transformation_rules": {
+      "machine_id_pattern": "machineId",
+      "device_id_pattern": "deviceId",
+      "sqm_id_pattern": "sqmId",
+      "uuid_pattern": "uuid",
+      "session_pattern": "session",
+      "custom_patterns": []
+    },
+    "id_generation": {
+      "preserve_format": true,
+      "use_secure_random": true,
+      "validation_enabled": true,
+      "fallback_strategy": "timestamp_based",
+      "machine_id_length": 64,
+      "uuid_version": 4
+    },
+    "safety": {
+      "require_confirmation": true,
+      "max_records_per_operation": 10000,
+      "integrity_check_before": true,
+      "integrity_check_after": true,
+      "rollback_on_failure": true
+    },
+    "reporting": {
+      "generate_migration_report": true,
+      "include_statistics": true,
+      "include_transformation_details": true,
+      "report_format": "json"
+    },
+    "performance": {
+      "parallel_processing": false,
+      "memory_optimization": true,
+      "progress_reporting": true,
+      "benchmark_enabled": false
+    },
+    "vscode_backup": {
+      "enabled": true,
+      "backup_before_migration": true,
+      "backup_components": {
+        "configurations": true,
+        "extensions": true,
+        "sessions": true,
+        "databases": true,
+        "workspaces": true,
+        "keybindings": true,
+        "snippets": true,
+        "themes": true
+      },
+      "backup_retention": {
+        "max_backups": 10,
+        "retention_days": 30,
+        "auto_cleanup": true
+      },
+      "backup_compression": {
+        "enabled": false,
+        "compression_level": 6
+      },
+      "backup_verification": {
+        "enabled": true,
+        "checksum_validation": true,
+        "integrity_check": true
+      }
+    }
+  },
   
   "development": {
     "debug_mode": false,

@@ -1,4 +1,16 @@
 #!/bin/bash
+# database.sh
+#
+# Auto-fixed for readonly variable conflicts
+
+# Prevent multiple loading
+if [[ "${DATABASE_SH_LOADED:-}" == "true" ]]; then
+    return 0
+fi
+if [[ -z "${DATABASE_SH_LOADED:-}" ]]; then
+    readonly DATABASE_SH_LOADED="true"
+fi
+
 # core/database.sh
 #
 # Enterprise-grade SQLite database operations module
@@ -14,29 +26,37 @@ source "$(dirname "${BASH_SOURCE[0]}")/validation.sh"
 source "$(dirname "${BASH_SOURCE[0]}")/backup.sh"
 
 # Database operation constants
-readonly DB_TIMEOUT=30
-readonly MAX_DB_SIZE=1073741824  # 1GB
-readonly BACKUP_BEFORE_CLEAN=true
+if [[ -z "${DB_TIMEOUT:-}" ]]; then
+    readonly DB_TIMEOUT=30
+fi
+if [[ -z "${MAX_DB_SIZE:-}" ]]; then
+    readonly MAX_DB_SIZE=1073741824  # 1GB
+fi
+if [[ -z "${BACKUP_BEFORE_CLEAN:-}" ]]; then
+    readonly BACKUP_BEFORE_CLEAN=true
+fi
 
 # Augment-related patterns to clean
-readonly AUGMENT_PATTERNS=(
-    "%augment%"
-    "%telemetry%"
-    "%machineId%"
-    "%deviceId%"
-    "%sqmId%"
-    "%uuid%"
-    "%session%"
-    "%lastSessionDate%"
-    "%lastSyncDate%"
-    "%lastSyncMachineId%"
-    "%lastSyncDeviceId%"
-    "%lastSyncSqmId%"
-    "%lastSyncUuid%"
-    "%lastSyncSession%"
-    "%lastSyncLastSessionDate%"
-    "%lastSyncLastSyncDate%"
-)
+if [[ -z "${AUGMENT_PATTERNS:-}" ]]; then
+    readonly AUGMENT_PATTERNS=(
+        "%augment%"
+        "%telemetry%"
+        "%machineId%"
+        "%deviceId%"
+        "%sqmId%"
+        "%uuid%"
+        "%session%"
+        "%lastSessionDate%"
+        "%lastSyncDate%"
+        "%lastSyncMachineId%"
+        "%lastSyncDeviceId%"
+        "%lastSyncSqmId%"
+        "%lastSyncUuid%"
+        "%lastSyncSession%"
+        "%lastSyncLastSessionDate%"
+        "%lastSyncLastSyncDate%"
+    )
+fi
 
 # Global database operation statistics
 declare -A DB_STATS=()
@@ -497,10 +517,285 @@ generate_database_report() {
     log_success "Database operations report generated: ${report_file}"
 }
 
-# Export database functions
+# Enhanced transaction management for migration operations
+
+# Transaction state tracking
+declare -A TRANSACTION_STATE=()
+
+# Begin migration transaction with savepoints
+begin_migration_transaction() {
+    local db_file="$1"
+    local transaction_id="${2:-migration_$(date +%s%3N)}"
+
+    log_debug "开始迁移事务: ${transaction_id}"
+
+    # Validate database file
+    if ! validate_database_file "${db_file}"; then
+        log_error "数据库验证失败，无法开始事务"
+        return 1
+    fi
+
+    # Begin transaction
+    if sqlite3 "${db_file}" "BEGIN IMMEDIATE TRANSACTION;" 2>/dev/null; then
+        TRANSACTION_STATE["${transaction_id}"]="active:${db_file}"
+        audit_log "TRANSACTION_BEGIN" "迁移事务开始: ${transaction_id} on ${db_file}"
+        log_debug "迁移事务开始成功: ${transaction_id}"
+        echo "${transaction_id}"
+        return 0
+    else
+        log_error "开始迁移事务失败: ${transaction_id}"
+        return 1
+    fi
+}
+
+# Create savepoint within transaction
+create_transaction_savepoint() {
+    local transaction_id="$1"
+    local savepoint_name="${2:-sp_$(date +%s%3N)}"
+
+    log_debug "创建事务保存点: ${savepoint_name}"
+
+    # Get database file from transaction state
+    local db_info="${TRANSACTION_STATE["${transaction_id}"]}"
+    if [[ -z "${db_info}" ]]; then
+        log_error "事务不存在: ${transaction_id}"
+        return 1
+    fi
+
+    local db_file="${db_info#*:}"
+
+    # Create savepoint
+    if sqlite3 "${db_file}" "SAVEPOINT ${savepoint_name};" 2>/dev/null; then
+        TRANSACTION_STATE["${transaction_id}:${savepoint_name}"]="savepoint:${db_file}"
+        log_debug "保存点创建成功: ${savepoint_name}"
+        echo "${savepoint_name}"
+        return 0
+    else
+        log_error "保存点创建失败: ${savepoint_name}"
+        return 1
+    fi
+}
+
+# Rollback to savepoint
+rollback_to_savepoint() {
+    local transaction_id="$1"
+    local savepoint_name="$2"
+
+    log_info "回滚到保存点: ${savepoint_name}"
+
+    # Get database file from transaction state
+    local savepoint_key="${transaction_id}:${savepoint_name}"
+    local db_info="${TRANSACTION_STATE["${savepoint_key}"]}"
+    if [[ -z "${db_info}" ]]; then
+        log_error "保存点不存在: ${savepoint_name}"
+        return 1
+    fi
+
+    local db_file="${db_info#*:}"
+
+    # Rollback to savepoint
+    if sqlite3 "${db_file}" "ROLLBACK TO SAVEPOINT ${savepoint_name};" 2>/dev/null; then
+        audit_log "TRANSACTION_ROLLBACK" "回滚到保存点: ${savepoint_name} in ${transaction_id}"
+        log_success "回滚到保存点成功: ${savepoint_name}"
+        return 0
+    else
+        log_error "回滚到保存点失败: ${savepoint_name}"
+        return 1
+    fi
+}
+
+# Commit migration transaction
+commit_migration_transaction() {
+    local transaction_id="$1"
+
+    log_info "提交迁移事务: ${transaction_id}"
+
+    # Get database file from transaction state
+    local db_info="${TRANSACTION_STATE["${transaction_id}"]}"
+    if [[ -z "${db_info}" ]]; then
+        log_error "事务不存在: ${transaction_id}"
+        return 1
+    fi
+
+    local db_file="${db_info#*:}"
+
+    # Commit transaction
+    if sqlite3 "${db_file}" "COMMIT;" 2>/dev/null; then
+        # Clean up transaction state
+        for key in "${!TRANSACTION_STATE[@]}"; do
+            if [[ "${key}" == "${transaction_id}"* ]]; then
+                unset TRANSACTION_STATE["${key}"]
+            fi
+        done
+
+        audit_log "TRANSACTION_COMMIT" "迁移事务提交: ${transaction_id} on ${db_file}"
+        log_success "迁移事务提交成功: ${transaction_id}"
+        return 0
+    else
+        log_error "迁移事务提交失败: ${transaction_id}"
+        return 1
+    fi
+}
+
+# Rollback migration transaction
+rollback_migration_transaction() {
+    local transaction_id="$1"
+
+    log_info "回滚迁移事务: ${transaction_id}"
+
+    # Get database file from transaction state
+    local db_info="${TRANSACTION_STATE["${transaction_id}"]}"
+    if [[ -z "${db_info}" ]]; then
+        log_error "事务不存在: ${transaction_id}"
+        return 1
+    fi
+
+    local db_file="${db_info#*:}"
+
+    # Rollback transaction
+    if sqlite3 "${db_file}" "ROLLBACK;" 2>/dev/null; then
+        # Clean up transaction state
+        for key in "${!TRANSACTION_STATE[@]}"; do
+            if [[ "${key}" == "${transaction_id}"* ]]; then
+                unset TRANSACTION_STATE["${key}"]
+            fi
+        done
+
+        audit_log "TRANSACTION_ROLLBACK" "迁移事务回滚: ${transaction_id} on ${db_file}"
+        log_success "迁移事务回滚成功: ${transaction_id}"
+        return 0
+    else
+        log_error "迁移事务回滚失败: ${transaction_id}"
+        return 1
+    fi
+}
+
+# Execute SQL within transaction with error handling
+execute_transaction_sql() {
+    local transaction_id="$1"
+    local sql_command="$2"
+    local error_action="${3:-rollback}"  # rollback, continue, savepoint
+
+    log_debug "在事务中执行SQL: ${transaction_id}"
+
+    # Get database file from transaction state
+    local db_info="${TRANSACTION_STATE["${transaction_id}"]}"
+    if [[ -z "${db_info}" ]]; then
+        log_error "事务不存在: ${transaction_id}"
+        return 1
+    fi
+
+    local db_file="${db_info#*:}"
+
+    # Execute SQL command
+    local sql_result
+    sql_result=$(sqlite3 "${db_file}" "${sql_command}" 2>&1)
+    local sql_exit_code=$?
+
+    if [[ ${sql_exit_code} -eq 0 ]]; then
+        log_debug "SQL执行成功"
+        echo "${sql_result}"
+        return 0
+    else
+        log_error "SQL执行失败: ${sql_result}"
+
+        # Handle error based on action
+        case "${error_action}" in
+            "rollback")
+                rollback_migration_transaction "${transaction_id}"
+                ;;
+            "savepoint")
+                local savepoint_name="error_recovery_$(date +%s%3N)"
+                create_transaction_savepoint "${transaction_id}" "${savepoint_name}"
+                ;;
+            "continue")
+                log_warn "忽略SQL错误，继续执行"
+                ;;
+        esac
+
+        return 1
+    fi
+}
+
+# Check transaction status
+check_transaction_status() {
+    local transaction_id="$1"
+
+    local db_info="${TRANSACTION_STATE["${transaction_id}"]}"
+    if [[ -n "${db_info}" ]]; then
+        local status="${db_info%%:*}"
+        local db_file="${db_info#*:}"
+
+        log_info "事务状态: ${transaction_id} - ${status} on ${db_file}"
+        echo "${status}"
+        return 0
+    else
+        log_info "事务不存在: ${transaction_id}"
+        echo "not_found"
+        return 1
+    fi
+}
+
+# List active transactions
+list_active_transactions() {
+    log_info "活动事务列表:"
+
+    local transaction_count=0
+    for key in "${!TRANSACTION_STATE[@]}"; do
+        if [[ "${key}" != *":"* ]]; then  # Main transaction, not savepoint
+            local db_info="${TRANSACTION_STATE["${key}"]}"
+            local status="${db_info%%:*}"
+            local db_file="${db_info#*:}"
+
+            log_info "  ${key}: ${status} on ${db_file}"
+            ((transaction_count++))
+        fi
+    done
+
+    if [[ ${transaction_count} -eq 0 ]]; then
+        log_info "  没有活动事务"
+    fi
+
+    return 0
+}
+
+# Cleanup orphaned transactions
+cleanup_orphaned_transactions() {
+    log_info "清理孤立事务"
+
+    local cleaned_count=0
+    for key in "${!TRANSACTION_STATE[@]}"; do
+        if [[ "${key}" != *":"* ]]; then  # Main transaction
+            local db_info="${TRANSACTION_STATE["${key}"]}"
+            local db_file="${db_info#*:}"
+
+            # Check if database file still exists and is accessible
+            if [[ ! -f "${db_file}" ]] || ! validate_database_file "${db_file}"; then
+                log_warn "清理孤立事务: ${key}"
+
+                # Remove transaction and its savepoints
+                for cleanup_key in "${!TRANSACTION_STATE[@]}"; do
+                    if [[ "${cleanup_key}" == "${key}"* ]]; then
+                        unset TRANSACTION_STATE["${cleanup_key}"]
+                    fi
+                done
+
+                ((cleaned_count++))
+            fi
+        fi
+    done
+
+    log_info "清理了 ${cleaned_count} 个孤立事务"
+    return 0
+}
+
+# Export enhanced database functions
 export -f init_database clean_vscode_database validate_database_file
 export -f count_augment_entries analyze_database generate_database_report
 export -f create_database_backup restore_database_backup
-export AUGMENT_PATTERNS DB_STATS
+export -f begin_migration_transaction create_transaction_savepoint rollback_to_savepoint
+export -f commit_migration_transaction rollback_migration_transaction execute_transaction_sql
+export -f check_transaction_status list_active_transactions cleanup_orphaned_transactions
+export AUGMENT_PATTERNS DB_STATS TRANSACTION_STATE
 
-log_debug "Database operations module loaded"
+log_debug "Database operations module loaded with enhanced transaction management"

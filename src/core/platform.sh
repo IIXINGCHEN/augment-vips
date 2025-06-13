@@ -1,4 +1,16 @@
 #!/bin/bash
+# platform.sh
+#
+# Auto-fixed for readonly variable conflicts
+
+# Prevent multiple loading
+if [[ "${PLATFORM_SH_LOADED:-}" == "true" ]]; then
+    return 0
+fi
+if [[ -z "${PLATFORM_SH_LOADED:-}" ]]; then
+    readonly PLATFORM_SH_LOADED="true"
+fi
+
 # core/platform.sh
 #
 # Enterprise-grade platform detection and adaptation module
@@ -11,10 +23,18 @@ set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/common.sh"
 
 # Platform constants
-readonly PLATFORM_WINDOWS="windows"
-readonly PLATFORM_LINUX="linux"
-readonly PLATFORM_MACOS="macos"
-readonly PLATFORM_UNKNOWN="unknown"
+if [[ -z "${PLATFORM_WINDOWS:-}" ]]; then
+    readonly PLATFORM_WINDOWS="windows"
+fi
+if [[ -z "${PLATFORM_LINUX:-}" ]]; then
+    readonly PLATFORM_LINUX="linux"
+fi
+if [[ -z "${PLATFORM_MACOS:-}" ]]; then
+    readonly PLATFORM_MACOS="macos"
+fi
+if [[ -z "${PLATFORM_UNKNOWN:-}" ]]; then
+    readonly PLATFORM_UNKNOWN="unknown"
+fi
 
 # Global platform variables
 DETECTED_PLATFORM=""

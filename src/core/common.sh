@@ -1,32 +1,62 @@
 #!/bin/bash
 # core/common.sh
-# 
+#
 # Enterprise-grade common functions library
 # Zero-redundancy design with shared core logic
 # Production-ready with comprehensive error handling
 
+# Prevent multiple loading
+if [[ "${COMMON_SH_LOADED:-}" == "true" ]]; then
+    return 0
+fi
+readonly COMMON_SH_LOADED="true"
+
 set -euo pipefail
 
-# Global constants
-readonly SCRIPT_VERSION="1.0.0"
-readonly SCRIPT_NAME="augment-vip"
-readonly LOG_LEVEL_ERROR=1
-readonly LOG_LEVEL_WARN=2
-readonly LOG_LEVEL_INFO=3
-readonly LOG_LEVEL_DEBUG=4
+# Global constants (only define if not already defined)
+if [[ -z "${SCRIPT_VERSION:-}" ]]; then
+    readonly SCRIPT_VERSION="1.0.0"
+fi
+if [[ -z "${SCRIPT_NAME:-}" ]]; then
+    readonly SCRIPT_NAME="augment-vip"
+fi
+if [[ -z "${LOG_LEVEL_ERROR:-}" ]]; then
+    readonly LOG_LEVEL_ERROR=1
+fi
+if [[ -z "${LOG_LEVEL_WARN:-}" ]]; then
+    readonly LOG_LEVEL_WARN=2
+fi
+if [[ -z "${LOG_LEVEL_INFO:-}" ]]; then
+    readonly LOG_LEVEL_INFO=3
+fi
+if [[ -z "${LOG_LEVEL_DEBUG:-}" ]]; then
+    readonly LOG_LEVEL_DEBUG=4
+fi
 
 # Global variables
 CURRENT_LOG_LEVEL=${LOG_LEVEL_INFO}
 LOG_FILE=""
 AUDIT_LOG_FILE=""
 
-# Color codes for output formatting
-readonly COLOR_RED='\033[0;31m'
-readonly COLOR_GREEN='\033[0;32m'
-readonly COLOR_YELLOW='\033[1;33m'
-readonly COLOR_BLUE='\033[0;34m'
-readonly COLOR_CYAN='\033[0;36m'
-readonly COLOR_RESET='\033[0m'
+# Color codes for output formatting (only define if not already defined)
+if [[ -z "${COLOR_RED:-}" ]]; then
+    readonly COLOR_RED='\033[0;31m'
+fi
+if [[ -z "${COLOR_GREEN:-}" ]]; then
+    readonly COLOR_GREEN='\033[0;32m'
+fi
+if [[ -z "${COLOR_YELLOW:-}" ]]; then
+    readonly COLOR_YELLOW='\033[1;33m'
+fi
+if [[ -z "${COLOR_BLUE:-}" ]]; then
+    readonly COLOR_BLUE='\033[0;34m'
+fi
+if [[ -z "${COLOR_CYAN:-}" ]]; then
+    readonly COLOR_CYAN='\033[0;36m'
+fi
+if [[ -z "${COLOR_RESET:-}" ]]; then
+    readonly COLOR_RESET='\033[0m'
+fi
 
 # Initialize common environment
 init_common() {

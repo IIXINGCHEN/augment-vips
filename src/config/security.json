@@ -35,7 +35,16 @@
     "path_discovery",
     "dependency_check",
     "validation_check",
-    "report_generation"
+    "report_generation",
+    "migration_extract",
+    "migration_transform",
+    "migration_insert",
+    "migration_validate",
+    "migration_workflow",
+    "selective_backup",
+    "transaction_management",
+    "consistency_check",
+    "transformation_rules"
   ],
   
   "restricted_operations": [

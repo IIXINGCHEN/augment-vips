@@ -1,4 +1,16 @@
 #!/bin/bash
+# validation.sh
+#
+# Auto-fixed for readonly variable conflicts
+
+# Prevent multiple loading
+if [[ "${VALIDATION_SH_LOADED:-}" == "true" ]]; then
+    return 0
+fi
+if [[ -z "${VALIDATION_SH_LOADED:-}" ]]; then
+    readonly VALIDATION_SH_LOADED="true"
+fi
+
 # core/validation.sh
 #
 # Enterprise-grade input validation and sanitization module
@@ -11,39 +23,57 @@ set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/common.sh"
 
 # Validation constants
-readonly MAX_INPUT_LENGTH=1024
-readonly MAX_COMMAND_LENGTH=256
-readonly MAX_ARGUMENT_COUNT=32
+if [[ -z "${MAX_INPUT_LENGTH:-}" ]]; then
+    readonly MAX_INPUT_LENGTH=1024
+fi
+if [[ -z "${MAX_COMMAND_LENGTH:-}" ]]; then
+    readonly MAX_COMMAND_LENGTH=256
+fi
+if [[ -z "${MAX_ARGUMENT_COUNT:-}" ]]; then
+    readonly MAX_ARGUMENT_COUNT=32
+fi
 
 # Allowed characters patterns
-readonly PATTERN_ALPHANUMERIC='^[a-zA-Z0-9]+$'
-readonly PATTERN_FILENAME='^[a-zA-Z0-9._-]+$'
-readonly PATTERN_PATH='^[a-zA-Z0-9._/-]+$'
-readonly PATTERN_VERSION='^[0-9]+\.[0-9]+\.[0-9]+$'
-readonly PATTERN_UUID='^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
+if [[ -z "${PATTERN_ALPHANUMERIC:-}" ]]; then
+    readonly PATTERN_ALPHANUMERIC='^[a-zA-Z0-9]+$'
+fi
+if [[ -z "${PATTERN_FILENAME:-}" ]]; then
+    readonly PATTERN_FILENAME='^[a-zA-Z0-9._-]+$'
+fi
+if [[ -z "${PATTERN_PATH:-}" ]]; then
+    readonly PATTERN_PATH='^[a-zA-Z0-9._/-]+$'
+fi
+if [[ -z "${PATTERN_VERSION:-}" ]]; then
+    readonly PATTERN_VERSION='^[0-9]+\.[0-9]+\.[0-9]+$'
+fi
+if [[ -z "${PATTERN_UUID:-}" ]]; then
+    readonly PATTERN_UUID='^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
+fi
 
 # Dangerous patterns to reject
-readonly DANGEROUS_PATTERNS=(
-    '\.\./\.\.'          # Directory traversal
-    '\$\('               # Command substitution
-    '`'                  # Command substitution
-    '\|\|'               # Command chaining
-    '&&'                 # Command chaining
-    ';'                  # Command separator
-    '\|'                 # Pipe
-    '>'                  # Redirection
-    '<'                  # Redirection
-    '\*'                 # Wildcard (in some contexts)
-    '\?'                 # Wildcard (in some contexts)
-    '\['                 # Character class
-    '\]'                 # Character class
-    '\{'                 # Brace expansion
-    '\}'                 # Brace expansion
-    '\$\{'               # Variable expansion
-    '\n'                 # Newline
-    '\r'                 # Carriage return
-    '\0'                 # Null byte
-)
+if [[ -z "${DANGEROUS_PATTERNS:-}" ]]; then
+    readonly DANGEROUS_PATTERNS=(
+        '\.\./\.\.'          # Directory traversal
+        '\$\('               # Command substitution
+        '`'                  # Command substitution
+        '\|\|'               # Command chaining
+        '&&'                 # Command chaining
+        ';'                  # Command separator
+        '\|'                 # Pipe
+        '>'                  # Redirection
+        '<'                  # Redirection
+        '\*'                 # Wildcard (in some contexts)
+        '\?'                 # Wildcard (in some contexts)
+        '\['                 # Character class
+        '\]'                 # Character class
+        '\{'                 # Brace expansion
+        '\}'                 # Brace expansion
+        '\$\{'               # Variable expansion
+        '\n'                 # Newline
+        '\r'                 # Carriage return
+        '\0'                 # Null byte
+    )
+fi
 
 # Initialize validation module
 init_validation() {

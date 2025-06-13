@@ -1,4 +1,16 @@
 #!/bin/bash
+# logging.sh
+#
+# Auto-fixed for readonly variable conflicts
+
+# Prevent multiple loading
+if [[ "${LOGGING_SH_LOADED:-}" == "true" ]]; then
+    return 0
+fi
+if [[ -z "${LOGGING_SH_LOADED:-}" ]]; then
+    readonly LOGGING_SH_LOADED="true"
+fi
+
 # core/logging.sh
 #
 # Enterprise-grade logging and audit system
@@ -11,13 +23,25 @@ set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/common.sh"
 
 # Logging constants
-readonly LOG_FORMAT_SIMPLE="simple"
-readonly LOG_FORMAT_JSON="json"
-readonly LOG_FORMAT_SYSLOG="syslog"
+if [[ -z "${LOG_FORMAT_SIMPLE:-}" ]]; then
+    readonly LOG_FORMAT_SIMPLE="simple"
+fi
+if [[ -z "${LOG_FORMAT_JSON:-}" ]]; then
+    readonly LOG_FORMAT_JSON="json"
+fi
+if [[ -z "${LOG_FORMAT_SYSLOG:-}" ]]; then
+    readonly LOG_FORMAT_SYSLOG="syslog"
+fi
 
-readonly LOG_ROTATION_SIZE=10485760  # 10MB
-readonly LOG_RETENTION_DAYS=30
-readonly MAX_LOG_FILES=10
+if [[ -z "${LOG_ROTATION_SIZE:-}" ]]; then
+    readonly LOG_ROTATION_SIZE=10485760  # 10MB
+fi
+if [[ -z "${LOG_RETENTION_DAYS:-}" ]]; then
+    readonly LOG_RETENTION_DAYS=30
+fi
+if [[ -z "${MAX_LOG_FILES:-}" ]]; then
+    readonly MAX_LOG_FILES=10
+fi
 
 # Global logging variables
 LOG_FORMAT="${LOG_FORMAT_SIMPLE}"

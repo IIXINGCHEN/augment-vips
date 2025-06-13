@@ -1,4 +1,16 @@
 #!/bin/bash
+# paths.sh
+#
+# Auto-fixed for readonly variable conflicts
+
+# Prevent multiple loading
+if [[ "${PATHS_SH_LOADED:-}" == "true" ]]; then
+    return 0
+fi
+if [[ -z "${PATHS_SH_LOADED:-}" ]]; then
+    readonly PATHS_SH_LOADED="true"
+fi
+
 # core/paths.sh
 #
 # Enterprise-grade cross-platform path resolution module
@@ -14,14 +26,26 @@ source "$(dirname "${BASH_SOURCE[0]}")/security.sh"
 source "$(dirname "${BASH_SOURCE[0]}")/validation.sh"
 
 # Path constants
-readonly VSCODE_APP_NAME="Code"
-readonly VSCODE_INSIDERS_APP_NAME="Code - Insiders"
-readonly VSCODE_PORTABLE_DATA_DIR="data"
+if [[ -z "${VSCODE_APP_NAME:-}" ]]; then
+    readonly VSCODE_APP_NAME="Code"
+fi
+if [[ -z "${VSCODE_INSIDERS_APP_NAME:-}" ]]; then
+    readonly VSCODE_INSIDERS_APP_NAME="Code - Insiders"
+fi
+if [[ -z "${VSCODE_PORTABLE_DATA_DIR:-}" ]]; then
+    readonly VSCODE_PORTABLE_DATA_DIR="data"
+fi
 
 # VS Code file patterns
-readonly VSCODE_DB_PATTERN="*.vscdb"
-readonly VSCODE_STORAGE_FILE="storage.json"
-readonly VSCODE_BACKUP_SUFFIX=".backup"
+if [[ -z "${VSCODE_DB_PATTERN:-}" ]]; then
+    readonly VSCODE_DB_PATTERN="*.vscdb"
+fi
+if [[ -z "${VSCODE_STORAGE_FILE:-}" ]]; then
+    readonly VSCODE_STORAGE_FILE="storage.json"
+fi
+if [[ -z "${VSCODE_BACKUP_SUFFIX:-}" ]]; then
+    readonly VSCODE_BACKUP_SUFFIX=".backup"
+fi
 
 # Global path variables
 declare -A VSCODE_PATHS=()

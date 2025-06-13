@@ -1,4 +1,16 @@
 #!/bin/bash
+# dependencies.sh
+#
+# Auto-fixed for readonly variable conflicts
+
+# Prevent multiple loading
+if [[ "${DEPENDENCIES_SH_LOADED:-}" == "true" ]]; then
+    return 0
+fi
+if [[ -z "${DEPENDENCIES_SH_LOADED:-}" ]]; then
+    readonly DEPENDENCIES_SH_LOADED="true"
+fi
+
 # core/dependencies.sh
 #
 # Enterprise-grade dependency management and verification module
@@ -13,8 +25,12 @@ source "$(dirname "${BASH_SOURCE[0]}")/platform.sh"
 source "$(dirname "${BASH_SOURCE[0]}")/security.sh"
 
 # Dependency constants
-readonly REQUIRED_DEPENDENCIES=("sqlite3" "curl" "jq")
-readonly OPTIONAL_DEPENDENCIES=("git" "wget" "openssl")
+if [[ -z "${REQUIRED_DEPENDENCIES:-}" ]]; then
+    readonly REQUIRED_DEPENDENCIES=("sqlite3" "curl" "jq")
+fi
+if [[ -z "${OPTIONAL_DEPENDENCIES:-}" ]]; then
+    readonly OPTIONAL_DEPENDENCIES=("git" "wget" "openssl")
+fi
 
 # Dependency information structure
 declare -A DEPENDENCY_INFO=(

@@ -8,12 +8,45 @@ param(
     [string]$Operation = "help",
     [switch]$DryRun = $false,
     [switch]$Verbose = $false,
-    [string]$ConfigFile = "config/settings.json"
+    [string]$ConfigFile = ""
 )
 
 # Set error handling and execution policy
 $ErrorActionPreference = "Stop"
 $VerbosePreference = if ($Verbose) { "Continue" } else { "SilentlyContinue" }
+
+# Logging functions
+function Write-LogInfo {
+    param([string]$Message)
+    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+    Write-Host "[$timestamp] [INFO] $Message" -ForegroundColor Cyan
+}
+
+function Write-LogSuccess {
+    param([string]$Message)
+    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+    Write-Host "[$timestamp] [SUCCESS] $Message" -ForegroundColor Green
+}
+
+function Write-LogError {
+    param([string]$Message)
+    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+    Write-Host "[$timestamp] [ERROR] $Message" -ForegroundColor Red
+}
+
+function Write-LogWarning {
+    param([string]$Message)
+    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+    Write-Host "[$timestamp] [WARNING] $Message" -ForegroundColor Yellow
+}
+
+function Write-LogDebug {
+    param([string]$Message)
+    if ($Verbose) {
+        $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+        Write-Host "[$timestamp] [DEBUG] $Message" -ForegroundColor Gray
+    }
+}
 
 # Script metadata
 $SCRIPT_VERSION = "1.0.0"
@@ -21,14 +54,32 @@ $SCRIPT_NAME = "augment-vip-windows"
 
 # Import required modules
 try {
-    # Check if running in correct directory structure
-    if (-not (Test-Path "core")) {
-        throw "Core modules directory not found. Please run from project root."
+    # Check if running in correct directory structure (support both src and legacy structure)
+    $coreDir = ""
+    if (Test-Path "src\core") {
+        $coreDir = "src\core"
+        $script:USE_SRC_STRUCTURE = $true
+    } elseif (Test-Path "core") {
+        $coreDir = "core"
+        $script:USE_SRC_STRUCTURE = $false
+    } else {
+        throw "Core modules directory not found. Expected 'src\core' or 'core' directory."
     }
-    
+
+    # Set up configuration file path
+    if ([string]::IsNullOrEmpty($ConfigFile)) {
+        if ($script:USE_SRC_STRUCTURE) {
+            $ConfigFile = "src\config\settings.json"
+        } else {
+            $ConfigFile = "config\settings.json"
+        }
+    }
+
     # PowerShell doesn't directly source bash scripts, so we implement equivalent functions
     Write-LogInfo "Initializing Windows platform implementation..."
-    
+    Write-LogInfo "Using core directory: $coreDir"
+    Write-LogInfo "Using config file: $ConfigFile"
+
 } catch {
     Write-Error "Failed to initialize: $($_.Exception.Message)"
     exit 1
@@ -110,31 +161,128 @@ function Test-WindowsPlatform {
     return $true
 }
 
-# Dependency management
+# Enhanced dependency management with better detection
 function Test-Dependencies {
     Write-LogInfo "Checking system dependencies..."
-    
+
     $requiredDeps = @("sqlite3", "curl", "jq")
+    $chocoPackageMap = @{
+        "sqlite3" = "SQLite"
+        "curl" = "curl"
+        "jq" = "jq"
+    }
     $missingDeps = @()
-    
+
+    # First, ensure Chocolatey is in PATH if installed
+    if (-not (Get-Command choco -ErrorAction SilentlyContinue) -and (Test-Path "C:\ProgramData\chocolatey\bin\choco.exe")) {
+        $env:Path += ";C:\ProgramData\chocolatey\bin"
+        Write-LogInfo "Chocolatey found and added to PATH"
+    }
+
     foreach ($dep in $requiredDeps) {
-        if (-not (Get-Command $dep -ErrorAction SilentlyContinue)) {
-            $missingDeps += $dep
-        } else {
+        $found = $false
+
+        # Method 1: Check if command is available in PATH
+        if (Get-Command $dep -ErrorAction SilentlyContinue) {
+            $found = $true
             Write-LogInfo "Dependency available: $dep"
+        }
+
+        # Method 2: Check Chocolatey installation specifically
+        if (-not $found -and (Get-Command choco -ErrorAction SilentlyContinue)) {
+            try {
+                $chocoList = & choco list --local-only $chocoPackageMap[$dep] 2>$null
+                if ($chocoList -and ($chocoList | Where-Object { $_ -like "*$($chocoPackageMap[$dep])*" -and $_ -notlike "*0 packages*" })) {
+                    # Package is installed via Chocolatey, try to refresh PATH
+                    $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
+
+                    # Check again after PATH refresh
+                    if (Get-Command $dep -ErrorAction SilentlyContinue) {
+                        $found = $true
+                        Write-LogInfo "Dependency available: $dep (found via Chocolatey)"
+                    } else {
+                        Write-LogWarning "Dependency $dep installed via Chocolatey but not in PATH"
+                    }
+                }
+            } catch {
+                Write-LogWarning "Failed to check Chocolatey for $dep`: $($_.Exception.Message)"
+            }
+        }
+
+        # Method 3: Check common installation paths
+        if (-not $found) {
+            $commonPaths = @()
+            switch ($dep) {
+                "sqlite3" {
+                    $commonPaths = @(
+                        "C:\sqlite\sqlite3.exe",
+                        "C:\Program Files\SQLite\sqlite3.exe",
+                        "C:\ProgramData\chocolatey\lib\SQLite\tools\sqlite3.exe",
+                        "$env:USERPROFILE\sqlite3.exe"
+                    )
+                }
+                "jq" {
+                    $commonPaths = @(
+                        "C:\jq\jq.exe",
+                        "C:\Program Files\jq\jq.exe",
+                        "C:\ProgramData\chocolatey\lib\jq\tools\jq.exe",
+                        "$env:USERPROFILE\jq.exe"
+                    )
+                }
+                "curl" {
+                    $commonPaths = @(
+                        "C:\Windows\System32\curl.exe",
+                        "C:\Program Files\curl\bin\curl.exe",
+                        "C:\ProgramData\chocolatey\lib\curl\tools\curl.exe"
+                    )
+                }
+            }
+
+            foreach ($path in $commonPaths) {
+                if (Test-Path $path) {
+                    $pathDir = Split-Path $path -Parent
+                    if ($env:Path -notlike "*$pathDir*") {
+                        $env:Path += ";$pathDir"
+                    }
+                    if (Get-Command $dep -ErrorAction SilentlyContinue) {
+                        $found = $true
+                        Write-LogInfo "Dependency available: $dep (found at $path)"
+                        break
+                    }
+                }
+            }
+        }
+
+        if (-not $found) {
+            $missingDeps += $dep
         }
     }
     
     if ($missingDeps.Count -gt 0) {
         Write-LogWarning "Missing dependencies: $($missingDeps -join ', ')"
         
-        # Check for Chocolatey
+        # Check for Chocolatey, install if not available
+        $chocoAvailable = $false
         if (Get-Command choco -ErrorAction SilentlyContinue) {
+            $chocoAvailable = $true
+        } elseif (Test-Path "C:\ProgramData\chocolatey\bin\choco.exe") {
+            $env:Path += ";C:\ProgramData\chocolatey\bin"
+            $chocoAvailable = $true
+            Write-LogInfo "Chocolatey found and added to PATH"
+        }
+
+        if ($chocoAvailable) {
             Write-LogInfo "Chocolatey available for dependency installation"
             return $missingDeps
         } else {
-            Write-LogError "Chocolatey not available. Please install dependencies manually."
-            return $false
+            Write-LogWarning "Chocolatey not found. Installing Chocolatey automatically..."
+            if (Install-Chocolatey) {
+                Write-LogSuccess "Chocolatey installed successfully"
+                return $missingDeps
+            } else {
+                Write-LogError "Failed to install Chocolatey. Please install dependencies manually."
+                return $false
+            }
         }
     }
     
@@ -145,28 +293,282 @@ function Test-Dependencies {
 
 function Install-Dependencies {
     param([array]$MissingDeps)
-    
+
     Write-LogInfo "Installing missing dependencies using Chocolatey..."
-    
+
+    # Package name mapping with CDN sources
+    $chocoPackageMap = @{
+        "sqlite3" = "SQLite"
+        "curl" = "curl"
+        "jq" = "jq"
+    }
+
+    # Direct download URLs for fallback (China CDN friendly)
+    $directDownloads = @{
+        "sqlite3" = @{
+            "url" = "https://www.sqlite.org/2024/sqlite-tools-win-x64-3460000.zip"
+            "exe" = "sqlite3.exe"
+            "installDir" = "C:\sqlite"
+        }
+        "jq" = @{
+            "url" = "https://github.com/jqlang/jq/releases/download/jq-1.7.1/jq-windows-amd64.exe"
+            "exe" = "jq.exe"
+            "installDir" = "C:\jq"
+        }
+    }
+
     foreach ($dep in $MissingDeps) {
-        Write-LogInfo "Installing: $dep"
+        $chocoPackage = if ($chocoPackageMap.ContainsKey($dep)) { $chocoPackageMap[$dep] } else { $dep }
+        Write-LogInfo "Installing: $dep (package: $chocoPackage)"
+
+        $installed = $false
+
+        # Method 1: Try Chocolatey installation
         try {
-            $result = choco install $dep -y
+            Write-LogInfo "Attempting Chocolatey installation for: $dep"
+            $result = & choco install $chocoPackage -y --no-progress --limit-output
             if ($LASTEXITCODE -eq 0) {
                 Write-LogSuccess "Successfully installed: $dep"
+                $installed = $true
             } else {
-                Write-LogError "Failed to install: $dep"
-                return $false
+                Write-LogWarning "Chocolatey installation failed for: $dep (exit code: $LASTEXITCODE)"
             }
         } catch {
-            Write-LogError "Exception installing $dep`: $($_.Exception.Message)"
+            Write-LogWarning "Chocolatey installation exception for $dep`: $($_.Exception.Message)"
+        }
+
+        # Method 2: Try direct download if Chocolatey failed
+        if (-not $installed -and $directDownloads.ContainsKey($dep)) {
+            Write-LogInfo "Attempting direct download for: $dep"
+            try {
+                $downloadInfo = $directDownloads[$dep]
+                $tempFile = Join-Path $env:TEMP "$dep-download"
+                $installDir = $downloadInfo.installDir
+
+                # Create installation directory
+                if (-not (Test-Path $installDir)) {
+                    New-Item -ItemType Directory -Path $installDir -Force | Out-Null
+                }
+
+                Write-LogInfo "Downloading $dep from: $($downloadInfo.url)"
+
+                # Download with retry logic
+                $maxRetries = 3
+                $downloaded = $false
+                for ($i = 1; $i -le $maxRetries; $i++) {
+                    try {
+                        (New-Object System.Net.WebClient).DownloadFile($downloadInfo.url, $tempFile)
+                        $downloaded = $true
+                        break
+                    } catch {
+                        Write-LogWarning "Download attempt $i failed: $($_.Exception.Message)"
+                        if ($i -eq $maxRetries) {
+                            throw "All download attempts failed"
+                        }
+                        Start-Sleep -Seconds 2
+                    }
+                }
+
+                if ($downloaded) {
+                    # Handle different file types
+                    if ($downloadInfo.url.EndsWith('.zip')) {
+                        # Extract ZIP file
+                        Expand-Archive -Path $tempFile -DestinationPath $installDir -Force
+                        # Find the executable
+                        $exePath = Get-ChildItem -Path $installDir -Name $downloadInfo.exe -Recurse | Select-Object -First 1
+                        if ($exePath) {
+                            $fullExePath = Join-Path $installDir $exePath
+                            # Move to root of install dir if needed
+                            if ($exePath -ne $downloadInfo.exe) {
+                                Move-Item $fullExePath (Join-Path $installDir $downloadInfo.exe) -Force
+                            }
+                        }
+                    } else {
+                        # Direct executable download
+                        $exePath = Join-Path $installDir $downloadInfo.exe
+                        Move-Item $tempFile $exePath -Force
+                    }
+
+                    # Add to PATH
+                    if ($env:Path -notlike "*$installDir*") {
+                        $env:Path += ";$installDir"
+                        # Also update machine PATH for persistence
+                        try {
+                            $machinePath = [Environment]::GetEnvironmentVariable("Path", "Machine")
+                            if ($machinePath -notlike "*$installDir*") {
+                                [Environment]::SetEnvironmentVariable("Path", "$machinePath;$installDir", "Machine")
+                            }
+                        } catch {
+                            Write-LogWarning "Failed to update machine PATH: $($_.Exception.Message)"
+                        }
+                    }
+
+                    # Verify installation
+                    if (Get-Command $dep -ErrorAction SilentlyContinue) {
+                        Write-LogSuccess "Successfully installed: $dep (direct download)"
+                        $installed = $true
+                    } else {
+                        Write-LogError "Direct download completed but $dep not found in PATH"
+                    }
+                }
+
+                # Cleanup
+                if (Test-Path $tempFile) {
+                    Remove-Item $tempFile -Force -ErrorAction SilentlyContinue
+                }
+
+            } catch {
+                Write-LogError "Direct download failed for $dep`: $($_.Exception.Message)"
+            }
+        }
+
+        if (-not $installed) {
+            Write-LogError "All installation methods failed for: $dep"
             return $false
         }
     }
-    
+
+    # Final verification
+    Write-LogInfo "Verifying dependency installation..."
+    $verificationFailed = $false
+    foreach ($dep in $MissingDeps) {
+        if (-not (Get-Command $dep -ErrorAction SilentlyContinue)) {
+            Write-LogError "Verification failed for: $dep"
+            $verificationFailed = $true
+        }
+    }
+
+    if ($verificationFailed) {
+        Write-LogError "Some dependencies failed verification"
+        return $false
+    }
+
     Write-LogSuccess "All dependencies installed successfully"
     Write-AuditLog "DEPENDENCIES_INSTALL" "Dependencies installed: $($MissingDeps -join ', ')"
     return $true
+}
+
+# Install Chocolatey package manager
+function Install-Chocolatey {
+    Write-LogInfo "Installing Chocolatey package manager..."
+
+    try {
+        # First check if Chocolatey is already installed but not in PATH
+        if (Test-Path "C:\ProgramData\chocolatey\bin\choco.exe") {
+            Write-LogInfo "Chocolatey already installed, adding to PATH"
+            $env:Path += ";C:\ProgramData\chocolatey\bin"
+            return $true
+        }
+
+        # Check if running as administrator
+        $currentUser = [Security.Principal.WindowsIdentity]::GetCurrent()
+        $principal = New-Object Security.Principal.WindowsPrincipal($currentUser)
+        $isAdmin = $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+
+        if (-not $isAdmin) {
+            Write-LogWarning "Administrator privileges recommended for Chocolatey installation"
+            Write-LogInfo "Attempting installation with current privileges..."
+        }
+
+        # Set execution policy temporarily
+        $originalPolicy = Get-ExecutionPolicy
+        Set-ExecutionPolicy Bypass -Scope Process -Force
+
+        # Download and install Chocolatey using China CDN
+        Write-LogInfo "Downloading Chocolatey installer from China CDN..."
+        [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
+
+        # Try China CDN first, fallback to official
+        $installUrls = @(
+            'https://chocolatey.org/install.ps1',
+            'https://community.chocolatey.org/install.ps1'
+        )
+
+        $installScript = $null
+        foreach ($url in $installUrls) {
+            try {
+                Write-LogInfo "Trying download from: $url"
+                $installScript = (New-Object System.Net.WebClient).DownloadString($url)
+                if ($installScript) {
+                    Write-LogInfo "Successfully downloaded from: $url"
+                    break
+                }
+            } catch {
+                Write-LogWarning "Failed to download from $url`: $($_.Exception.Message)"
+            }
+        }
+
+        if (-not $installScript) {
+            throw "Failed to download Chocolatey installer from all sources"
+        }
+
+        Write-LogInfo "Executing Chocolatey installer..."
+        Invoke-Expression $installScript
+
+        # Restore execution policy
+        Set-ExecutionPolicy $originalPolicy -Scope Process -Force
+
+        # Refresh environment variables multiple ways
+        $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
+
+        # Wait for installation to complete
+        Write-LogInfo "Waiting for Chocolatey installation to complete..."
+        Start-Sleep -Seconds 10
+
+        # Try multiple verification methods
+        $chocoFound = $false
+
+        # Method 1: Check command availability
+        if (Get-Command choco -ErrorAction SilentlyContinue) {
+            $chocoFound = $true
+        }
+
+        # Method 2: Check standard installation path
+        if (-not $chocoFound -and (Test-Path "C:\ProgramData\chocolatey\bin\choco.exe")) {
+            $env:Path += ";C:\ProgramData\chocolatey\bin"
+            $chocoFound = $true
+        }
+
+        # Method 3: Check user profile path
+        if (-not $chocoFound -and (Test-Path "$env:USERPROFILE\chocolatey\bin\choco.exe")) {
+            $env:Path += ";$env:USERPROFILE\chocolatey\bin"
+            $chocoFound = $true
+        }
+
+        if ($chocoFound) {
+            Write-LogSuccess "Chocolatey installed successfully"
+            Write-AuditLog "CHOCOLATEY_INSTALL" "Chocolatey package manager installed"
+
+            # Configure China mirror sources for faster downloads
+            try {
+                Write-LogInfo "Configuring China mirror sources..."
+                & choco source add -n=china -s="https://chocolatey.org/api/v2/" --priority=1 2>$null
+                & choco feature enable -n=usePackageRepositoryOptimizations 2>$null
+                Write-LogInfo "China mirror sources configured"
+            } catch {
+                Write-LogWarning "Failed to configure mirror sources, using default"
+            }
+
+            # Get Chocolatey version
+            try {
+                $chocoVersion = & choco --version 2>$null
+                Write-LogInfo "Chocolatey version: $chocoVersion"
+            } catch {
+                Write-LogInfo "Chocolatey installed but version check failed"
+            }
+
+            return $true
+        } else {
+            Write-LogError "Chocolatey installation verification failed"
+            Write-LogError "Please install Chocolatey manually from: https://chocolatey.org/install"
+            return $false
+        }
+
+    } catch {
+        Write-LogError "Exception during Chocolatey installation: $($_.Exception.Message)"
+        Write-LogError "Please install Chocolatey manually from: https://chocolatey.org/install"
+        return $false
+    }
 }
 
 # Enhanced VS Code path discovery for production environment
@@ -894,18 +1296,24 @@ function Invoke-AugmentVIP {
         return 1
     }
     
-    # Dependency check
+    # Dependency check with automatic installation
     $depCheck = Test-Dependencies
     if ($depCheck -is [array]) {
-        # Missing dependencies found
-        $response = Read-Host "Install missing dependencies? (y/N)"
-        if ($response -match '^[Yy]$') {
-            if (-not (Install-Dependencies $depCheck)) {
-                Write-LogError "Dependency installation failed"
-                return 1
-            }
-        } else {
-            Write-LogError "Required dependencies not available"
+        # Missing dependencies found - auto install
+        Write-LogInfo "Auto-installing missing dependencies: $($depCheck -join ', ')"
+        if (-not (Install-Dependencies $depCheck)) {
+            Write-LogError "Dependency installation failed"
+            return 1
+        }
+
+        # Verify installation
+        Write-LogInfo "Verifying dependency installation..."
+        $verifyCheck = Test-Dependencies
+        if ($verifyCheck -is [array]) {
+            Write-LogError "Some dependencies still missing after installation: $($verifyCheck -join ', ')"
+            return 1
+        } elseif ($verifyCheck -eq $false) {
+            Write-LogError "Dependency verification failed"
             return 1
         }
     } elseif ($depCheck -eq $false) {
@@ -940,6 +1348,11 @@ function Invoke-AugmentVIP {
             $result = Invoke-TelemetryModification $storageFiles $DryRun
             Write-LogInfo "Telemetry modification result: $($result | ConvertTo-Json)"
         }
+        "migrate" {
+            # Execute complete 6-step migration workflow
+            $result = Invoke-CompleteMigrationWorkflow $vscodePaths $DryRun
+            Write-LogInfo "Complete migration workflow result: $($result | ConvertTo-Json)"
+        }
         "all" {
             # Clean databases
             $dbFiles = Get-DatabaseFiles $vscodePaths
@@ -947,7 +1360,7 @@ function Invoke-AugmentVIP {
                 $cleanResult = Invoke-DatabaseCleaning $dbFiles $DryRun
                 Write-LogInfo "Database cleaning result: $($cleanResult | ConvertTo-Json)"
             }
-            
+
             # Modify telemetry IDs
             $storageFiles = Get-StorageFiles $vscodePaths
             if ($storageFiles.Count -gt 0) {
@@ -971,6 +1384,76 @@ function Invoke-AugmentVIP {
     return 0
 }
 
+# Complete 6-step migration workflow
+function Invoke-CompleteMigrationWorkflow {
+    param(
+        [array]$VSCodePaths,
+        [bool]$DryRun
+    )
+
+    Write-LogInfo "Starting complete 6-step migration workflow"
+
+    if ($DryRun) {
+        Write-LogInfo "DRY RUN MODE: Preview only, no actual modifications"
+    }
+
+    # Call master migration controller
+    $scriptDir = $PSScriptRoot
+    if (-not $scriptDir) {
+        $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Definition
+    }
+    if (-not $scriptDir) {
+        $scriptDir = Get-Location
+    }
+
+    Write-LogInfo "Script directory: $scriptDir"
+    $controllerPath = Join-Path $scriptDir "..\controllers\master_migration_controller.sh"
+    $controllerPath = $controllerPath -replace '\\', '/'
+
+    if (-not (Test-Path $controllerPath)) {
+        Write-LogError "Master migration controller not found: $controllerPath"
+        # Try alternative path
+        $altPath = "src/controllers/master_migration_controller.sh"
+        if (Test-Path $altPath) {
+            $controllerPath = $altPath
+            Write-LogInfo "Using alternative controller path: $controllerPath"
+        } else {
+            # Try absolute path from current directory
+            $currentDir = Get-Location
+            $absolutePath = Join-Path $currentDir "src\controllers\master_migration_controller.sh"
+            if (Test-Path $absolutePath) {
+                $controllerPath = $absolutePath -replace '\\', '/'
+                Write-LogInfo "Using absolute controller path: $controllerPath"
+            } else {
+                return @{ Success = $false; Error = "Controller not found in any location" }
+            }
+        }
+    }
+
+    try {
+        $bashArgs = @()
+        if ($DryRun) {
+            $bashArgs += "--dry-run"
+        }
+
+        Write-LogInfo "Executing master migration controller..."
+        $result = & bash $controllerPath @bashArgs
+        $exitCode = $LASTEXITCODE
+
+        if ($exitCode -eq 0) {
+            Write-LogSuccess "Complete migration workflow completed successfully"
+            return @{ Success = $true; ExitCode = $exitCode }
+        } else {
+            Write-LogError "Complete migration workflow failed with exit code: $exitCode"
+            return @{ Success = $false; ExitCode = $exitCode }
+        }
+
+    } catch {
+        Write-LogError "Exception during migration workflow: $($_.Exception.Message)"
+        return @{ Success = $false; Error = $_.Exception.Message }
+    }
+}
+
 # Help function
 function Show-Help {
     Write-Host @"
@@ -982,6 +1465,7 @@ USAGE:
 OPERATIONS:
     clean       Clean VS Code databases (remove Augment entries)
     modify-ids  Modify VS Code telemetry IDs
+    migrate     Complete 6-step migration workflow
     all         Perform both cleaning and ID modification
     help        Show this help message
 

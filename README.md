@@ -69,24 +69,40 @@ chmod +x install
 ```
 augment-vip/
 ├── install                    # Unified cross-platform entry point
-├── core/                      # Zero-redundancy shared modules
-│   ├── common.sh             # Common functions and utilities
-│   ├── platform.sh           # Platform detection and adaptation
-│   ├── security.sh           # Security validation and controls
-│   ├── validation.sh         # Input validation and sanitization
-│   ├── dependencies.sh       # Dependency management
-│   ├── paths.sh              # Cross-platform path resolution
-│   ├── database.sh           # SQLite database operations
-│   ├── telemetry.sh          # Telemetry ID processing
-│   ├── backup.sh             # Backup and recovery
-│   └── logging.sh            # Enterprise logging system
-├── platforms/                # Platform-specific implementations
-│   ├── windows.ps1           # Windows PowerShell implementation
-│   ├── linux.sh              # Linux Bash implementation
-│   └── macos.sh              # macOS Bash implementation
-├── config/                   # Configuration management
-│   ├── settings.json         # Main configuration
-│   └── security.json         # Security policies
+├── src/                       # All source code organized under src/
+│   ├── core/                  # Zero-redundancy shared modules
+│   │   ├── common.sh         # Common functions and utilities
+│   │   ├── platform.sh       # Platform detection and adaptation
+│   │   ├── security.sh       # Security validation and controls
+│   │   ├── validation.sh     # Input validation and sanitization
+│   │   ├── dependencies.sh   # Dependency management
+│   │   ├── paths.sh          # Cross-platform path resolution
+│   │   ├── database.sh       # SQLite database operations
+│   │   ├── backup.sh         # Backup and recovery
+│   │   └── logging.sh        # Enterprise logging system
+│   ├── platforms/            # Platform-specific implementations
+│   │   ├── windows.ps1       # Windows PowerShell implementation
+│   │   ├── linux.sh          # Linux Bash implementation
+│   │   └── macos.sh          # macOS Bash implementation
+│   ├── controllers/          # Main control scripts
+│   │   ├── master_migration_controller.sh      # Enterprise migration controller
+│   │   └── master_migration_controller_fixed.sh # Fixed version controller
+│   ├── analyzers/            # Analysis and diagnostic tools
+│   │   ├── augment_analyzer.py                 # Python analyzer
+│   │   ├── analyze_augment_config.sh           # Configuration analyzer
+│   │   ├── augment_config_analyzer.sh          # Standalone analyzer
+│   │   ├── advanced_augment_analyzer.sh        # Advanced analysis
+│   │   └── simple_augment_analyzer.sh          # Simple analysis
+│   ├── backup/               # Backup system components
+│   │   ├── complete_vscode_backup_system.sh    # Complete backup system
+│   │   └── vscode_backup_functions.sh          # Backup functions
+│   ├── integration/          # Integration scripts
+│   │   └── main_with_vscode_backup.sh          # Main integration script
+│   ├── tests/                # Test scripts
+│   │   └── test_master_controller.sh           # Controller tests
+│   └── config/               # Configuration management
+│       ├── settings.json     # Main configuration
+│       └── security.json     # Security policies
 ├── tests/                    # Comprehensive test suite
 │   ├── unit/                 # Unit tests
 │   ├── integration/          # Integration tests

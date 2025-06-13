@@ -1,4 +1,16 @@
 #!/bin/bash
+# backup.sh
+#
+# Auto-fixed for readonly variable conflicts
+
+# Prevent multiple loading
+if [[ "${BACKUP_SH_LOADED:-}" == "true" ]]; then
+    return 0
+fi
+if [[ -z "${BACKUP_SH_LOADED:-}" ]]; then
+    readonly BACKUP_SH_LOADED="true"
+fi
+
 # core/backup.sh
 #
 # Enterprise-grade backup and recovery module
@@ -13,16 +25,32 @@ source "$(dirname "${BASH_SOURCE[0]}")/security.sh"
 source "$(dirname "${BASH_SOURCE[0]}")/validation.sh"
 
 # Backup constants
-readonly BACKUP_DIR_DEFAULT="backups"
-readonly BACKUP_RETENTION_DAYS=30
-readonly MAX_BACKUP_SIZE=1073741824  # 1GB
-readonly BACKUP_COMPRESSION=true
-readonly BACKUP_VERIFICATION=true
+if [[ -z "${BACKUP_DIR_DEFAULT:-}" ]]; then
+    readonly BACKUP_DIR_DEFAULT="backups"
+fi
+if [[ -z "${BACKUP_RETENTION_DAYS:-}" ]]; then
+    readonly BACKUP_RETENTION_DAYS=30
+fi
+if [[ -z "${MAX_BACKUP_SIZE:-}" ]]; then
+    readonly MAX_BACKUP_SIZE=1073741824  # 1GB
+fi
+if [[ -z "${BACKUP_COMPRESSION:-}" ]]; then
+    readonly BACKUP_COMPRESSION=true
+fi
+if [[ -z "${BACKUP_VERIFICATION:-}" ]]; then
+    readonly BACKUP_VERIFICATION=true
+fi
 
 # Backup file patterns
-readonly BACKUP_SUFFIX=".backup"
-readonly BACKUP_TIMESTAMP_FORMAT="%Y%m%d_%H%M%S"
-readonly BACKUP_MANIFEST_FILE="backup_manifest.json"
+if [[ -z "${BACKUP_SUFFIX:-}" ]]; then
+    readonly BACKUP_SUFFIX=".backup"
+fi
+if [[ -z "${BACKUP_TIMESTAMP_FORMAT:-}" ]]; then
+    readonly BACKUP_TIMESTAMP_FORMAT="%Y%m%d_%H%M%S"
+fi
+if [[ -z "${BACKUP_MANIFEST_FILE:-}" ]]; then
+    readonly BACKUP_MANIFEST_FILE="backup_manifest.json"
+fi
 
 # Global backup variables
 BACKUP_BASE_DIR=""
@@ -658,9 +686,275 @@ generate_backup_report() {
     log_success "Backup report generated: ${report_file}"
 }
 
-# Export backup functions
+# Create selective database backup based on SQL query
+create_selective_backup() {
+    local db_file="$1"
+    local sql_query="$2"
+    local backup_type="${3:-selective}"
+    local description="${4:-Selective data backup}"
+
+    log_info "创建选择性备份: ${db_file}"
+
+    # Validate database file
+    if ! validate_file_access "${db_file}" "read"; then
+        log_error "数据库文件验证失败: ${db_file}"
+        return 1
+    fi
+
+    # Authorize backup operation
+    if ! authorize_operation "backup_create" "${db_file}"; then
+        log_error "选择性备份操作未授权"
+        return 1
+    fi
+
+    # Generate backup ID and paths
+    local backup_id
+    backup_id=$(generate_backup_id "${db_file}")
+    local timestamp=$(get_timestamp)
+    local backup_filename="selective_backup_${backup_id}_${timestamp}.json"
+    local backup_path="${BACKUP_BASE_DIR}/selective/${backup_filename}"
+
+    # Create backup directory
+    mkdir -p "$(dirname "${backup_path}")"
+
+    # Execute selective backup
+    local start_time=$(date +%s.%3N)
+
+    if perform_selective_backup "${db_file}" "${sql_query}" "${backup_path}"; then
+        # Register backup
+        register_selective_backup "${backup_id}" "${db_file}" "${backup_path}" "${backup_type}" "${description}"
+
+        local end_time=$(date +%s.%3N)
+        log_performance "selective_backup" "${start_time}" "${end_time}" "${db_file}"
+
+        ((BACKUP_STATS["backups_created"]++))
+        audit_log "SELECTIVE_BACKUP" "选择性备份已创建: ${db_file} -> ${backup_path}"
+        log_success "选择性备份创建成功: ${backup_path}"
+        echo "${backup_path}"
+        return 0
+    else
+        log_error "选择性备份创建失败: ${db_file}"
+        ((BACKUP_STATS["errors_encountered"]++))
+        return 1
+    fi
+}
+
+# Perform selective backup operation
+perform_selective_backup() {
+    local db_file="$1"
+    local sql_query="$2"
+    local backup_path="$3"
+
+    log_debug "执行选择性备份操作"
+
+    # Validate SQL query for safety
+    if ! validate_sql_query "${sql_query}"; then
+        log_error "SQL查询验证失败"
+        return 1
+    fi
+
+    # Execute query and export as JSON
+    local backup_data
+    backup_data=$(sqlite3 "${db_file}" "${sql_query}" 2>/dev/null)
+    if [[ $? -ne 0 ]]; then
+        log_error "SQL查询执行失败"
+        return 1
+    fi
+
+    # Create backup metadata
+    local backup_metadata
+    backup_metadata=$(jq -n \
+        --arg timestamp "$(date -u '+%Y-%m-%dT%H:%M:%S.%3NZ')" \
+        --arg source_file "${db_file}" \
+        --arg sql_query "${sql_query}" \
+        --arg record_count "$(echo "${backup_data}" | wc -l)" \
+        '{
+            metadata: {
+                timestamp: $timestamp,
+                source_file: $source_file,
+                sql_query: $sql_query,
+                record_count: ($record_count | tonumber),
+                backup_type: "selective"
+            },
+            data: []
+        }')
+
+    # Process backup data into JSON array
+    local json_data="[]"
+    if [[ -n "${backup_data}" ]]; then
+        while IFS= read -r line; do
+            if [[ -n "${line}" ]]; then
+                # Assume line is already JSON or convert it
+                json_data=$(echo "${json_data}" | jq --argjson item "${line}" '. += [$item]')
+            fi
+        done <<< "${backup_data}"
+    fi
+
+    # Combine metadata and data
+    local final_backup
+    final_backup=$(echo "${backup_metadata}" | jq --argjson data "${json_data}" '.data = $data')
+
+    # Write to backup file
+    if echo "${final_backup}" | jq '.' > "${backup_path}"; then
+        log_debug "选择性备份数据写入成功"
+        return 0
+    else
+        log_error "选择性备份数据写入失败"
+        return 1
+    fi
+}
+
+# Validate SQL query for safety
+validate_sql_query() {
+    local sql_query="$1"
+
+    # Convert to lowercase for checking
+    local lower_query=$(echo "${sql_query}" | tr '[:upper:]' '[:lower:]')
+
+    # Check for dangerous operations
+    if [[ "${lower_query}" =~ (drop|delete|update|insert|alter|create|truncate) ]]; then
+        log_error "SQL查询包含危险操作: ${sql_query}"
+        return 1
+    fi
+
+    # Must be a SELECT query
+    if [[ ! "${lower_query}" =~ ^[[:space:]]*select ]]; then
+        log_error "只允许SELECT查询: ${sql_query}"
+        return 1
+    fi
+
+    return 0
+}
+
+# Register selective backup
+register_selective_backup() {
+    local backup_id="$1"
+    local source_file="$2"
+    local backup_path="$3"
+    local backup_type="$4"
+    local description="$5"
+
+    # Create backup entry
+    local backup_entry
+    backup_entry=$(jq -n \
+        --arg backup_id "${backup_id}" \
+        --arg source_file "${source_file}" \
+        --arg backup_path "${backup_path}" \
+        --arg backup_type "${backup_type}" \
+        --arg description "${description}" \
+        --arg created "$(date -u '+%Y-%m-%dT%H:%M:%S.%3NZ')" \
+        --arg size "$(stat -f%z "${backup_path}" 2>/dev/null || stat -c%s "${backup_path}" 2>/dev/null)" \
+        '{
+            backup_id: $backup_id,
+            source_file: $source_file,
+            backup_path: $backup_path,
+            backup_type: $backup_type,
+            description: $description,
+            created: $created,
+            size: ($size | tonumber),
+            selective: true
+        }')
+
+    # Add to registry
+    BACKUP_REGISTRY["${backup_id}"]="${backup_entry}"
+
+    # Save registry
+    save_backup_registry
+
+    log_debug "选择性备份已注册: ${backup_id}"
+}
+
+# Restore selective backup
+restore_selective_backup() {
+    local backup_path="$1"
+    local target_db="$2"
+    local restore_mode="${3:-insert}"  # insert, replace, or merge
+
+    log_info "恢复选择性备份: ${backup_path} -> ${target_db}"
+
+    # Validate backup file
+    if [[ ! -f "${backup_path}" ]]; then
+        log_error "备份文件不存在: ${backup_path}"
+        return 1
+    fi
+
+    # Authorize restore operation
+    if ! authorize_operation "backup_restore" "${target_db}"; then
+        log_error "选择性恢复操作未授权"
+        return 1
+    fi
+
+    # Parse backup file
+    local backup_data
+    backup_data=$(jq '.data[]' "${backup_path}" 2>/dev/null)
+    if [[ $? -ne 0 ]]; then
+        log_error "备份文件格式无效: ${backup_path}"
+        return 1
+    fi
+
+    # Restore data based on mode
+    case "${restore_mode}" in
+        "insert")
+            restore_selective_insert "${target_db}" "${backup_data}"
+            ;;
+        "replace")
+            restore_selective_replace "${target_db}" "${backup_data}"
+            ;;
+        "merge")
+            restore_selective_merge "${target_db}" "${backup_data}"
+            ;;
+        *)
+            log_error "未知的恢复模式: ${restore_mode}"
+            return 1
+            ;;
+    esac
+}
+
+# Restore selective backup with insert mode
+restore_selective_insert() {
+    local target_db="$1"
+    local backup_data="$2"
+
+    log_debug "使用插入模式恢复选择性备份"
+
+    local sql_commands="BEGIN TRANSACTION;"
+    local insert_count=0
+
+    # Process each record
+    while IFS= read -r record; do
+        if [[ -n "${record}" ]]; then
+            local key value
+            key=$(echo "${record}" | jq -r '.key' 2>/dev/null)
+            value=$(echo "${record}" | jq -r '.value' 2>/dev/null)
+
+            if [[ -n "${key}" && "${key}" != "null" ]]; then
+                # Escape single quotes for SQL
+                key=$(echo "${key}" | sed "s/'/''/g")
+                value=$(echo "${value}" | sed "s/'/''/g")
+
+                sql_commands="${sql_commands} INSERT OR IGNORE INTO ItemTable (key, value) VALUES ('${key}', '${value}');"
+                ((insert_count++))
+            fi
+        fi
+    done <<< "${backup_data}"
+
+    sql_commands="${sql_commands} COMMIT;"
+
+    # Execute restoration
+    if sqlite3 "${target_db}" "${sql_commands}" 2>/dev/null; then
+        log_success "选择性备份恢复成功，插入了 ${insert_count} 条记录"
+        return 0
+    else
+        log_error "选择性备份恢复失败"
+        return 1
+    fi
+}
+
+# Export backup functions including selective backup
 export -f init_backup create_backup restore_backup list_backups
 export -f cleanup_old_backups generate_backup_report verify_backup_integrity
+export -f create_selective_backup perform_selective_backup validate_sql_query
+export -f register_selective_backup restore_selective_backup restore_selective_insert
 export BACKUP_BASE_DIR BACKUP_REGISTRY BACKUP_STATS
 
-log_debug "Backup and recovery module loaded"
+log_debug "Backup and recovery module loaded with selective backup support"

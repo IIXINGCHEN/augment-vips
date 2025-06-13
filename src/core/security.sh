@@ -5,20 +5,40 @@
 # Production-ready with comprehensive security controls
 # Zero-trust security model implementation
 
+# Prevent multiple loading
+if [[ "${SECURITY_SH_LOADED:-}" == "true" ]]; then
+    return 0
+fi
+readonly SECURITY_SH_LOADED="true"
+
 set -euo pipefail
 
 # Source common functions
 source "$(dirname "${BASH_SOURCE[0]}")/common.sh"
 
-# Security constants
-readonly SECURITY_LEVEL_LOW=1
-readonly SECURITY_LEVEL_MEDIUM=2
-readonly SECURITY_LEVEL_HIGH=3
-readonly SECURITY_LEVEL_CRITICAL=4
+# Security constants (only define if not already defined)
+if [[ -z "${SECURITY_LEVEL_LOW:-}" ]]; then
+    readonly SECURITY_LEVEL_LOW=1
+fi
+if [[ -z "${SECURITY_LEVEL_MEDIUM:-}" ]]; then
+    readonly SECURITY_LEVEL_MEDIUM=2
+fi
+if [[ -z "${SECURITY_LEVEL_HIGH:-}" ]]; then
+    readonly SECURITY_LEVEL_HIGH=3
+fi
+if [[ -z "${SECURITY_LEVEL_CRITICAL:-}" ]]; then
+    readonly SECURITY_LEVEL_CRITICAL=4
+fi
 
-readonly MAX_PATH_LENGTH=4096
-readonly MAX_FILENAME_LENGTH=255
-readonly ALLOWED_FILE_EXTENSIONS=("vscdb" "json" "backup")
+if [[ -z "${MAX_PATH_LENGTH:-}" ]]; then
+    readonly MAX_PATH_LENGTH=4096
+fi
+if [[ -z "${MAX_FILENAME_LENGTH:-}" ]]; then
+    readonly MAX_FILENAME_LENGTH=255
+fi
+if [[ -z "${ALLOWED_FILE_EXTENSIONS:-}" ]]; then
+    readonly ALLOWED_FILE_EXTENSIONS=("vscdb" "json" "backup")
+fi
 
 # Global security variables
 CURRENT_SECURITY_LEVEL=${SECURITY_LEVEL_HIGH}

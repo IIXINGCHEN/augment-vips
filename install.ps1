@@ -168,9 +168,11 @@ function Initialize-Environment {
     Write-AuditLog "INSTALLER_START" "Windows installer started with operation: $Operation"
 
     # Check if we're in the correct project structure (more flexible for remote execution)
-    $platformsDir = Join-Path $PROJECT_ROOT "platforms"
-    if (-not (Test-Path $platformsDir)) {
-        Write-LogWarning "Platforms directory not found: $platformsDir"
+    $platformsDir = Join-Path $PROJECT_ROOT "src\platforms"
+    $legacyPlatformsDir = Join-Path $PROJECT_ROOT "platforms"
+
+    if (-not (Test-Path $platformsDir) -and -not (Test-Path $legacyPlatformsDir)) {
+        Write-LogWarning "Platforms directory not found: $platformsDir or $legacyPlatformsDir"
         Write-LogInfo "This may be normal for remote execution mode"
 
         # For remote execution, we can continue without the full project structure
@@ -179,8 +181,17 @@ function Initialize-Environment {
             return $true
         } else {
             Write-LogError "Invalid project structure. Please run from the project root directory."
-            Write-LogError "Expected to find 'platforms' directory in: $PROJECT_ROOT"
+            Write-LogError "Expected to find 'src\platforms' or 'platforms' directory in: $PROJECT_ROOT"
             return $false
+        }
+    } else {
+        # Update PROJECT_ROOT to use src structure if it exists
+        if (Test-Path $platformsDir) {
+            Write-LogInfo "Using src-based project structure"
+            $script:USE_SRC_STRUCTURE = $true
+        } else {
+            Write-LogInfo "Using legacy project structure"
+            $script:USE_SRC_STRUCTURE = $false
         }
     }
 
@@ -194,11 +205,18 @@ function Test-Dependencies {
     $dependencies = @("sqlite3", "curl", "jq")
     $missingDeps = @()
 
+    # Ensure Chocolatey is in PATH if installed
+    if (-not (Get-Command choco -ErrorAction SilentlyContinue) -and (Test-Path "C:\ProgramData\chocolatey\bin\choco.exe")) {
+        $env:Path += ";C:\ProgramData\chocolatey\bin"
+        Write-LogInfo "Chocolatey found and added to PATH"
+    }
+
     foreach ($dep in $dependencies) {
-        if (-not (Get-Command $dep -ErrorAction SilentlyContinue)) {
-            $missingDeps += $dep
-            Write-LogWarning "Missing dependency: $dep"
-        } else {
+        $found = $false
+
+        # Method 1: Check if command is available in PATH
+        if (Get-Command $dep -ErrorAction SilentlyContinue) {
+            $found = $true
             Write-LogSuccess "Found dependency: $dep"
 
             # Basic version check for critical dependencies
@@ -227,21 +245,106 @@ function Test-Dependencies {
                 Write-LogWarning "Could not determine version for: $dep"
             }
         }
+
+        # Method 2: Check Chocolatey installation specifically
+        if (-not $found -and (Get-Command choco -ErrorAction SilentlyContinue)) {
+            $chocoPackageMap = @{
+                "sqlite3" = "SQLite"
+                "curl" = "curl"
+                "jq" = "jq"
+            }
+
+            try {
+                $chocoList = & choco list --local-only $chocoPackageMap[$dep] 2>$null
+                if ($chocoList -and ($chocoList | Where-Object { $_ -like "*$($chocoPackageMap[$dep])*" -and $_ -notlike "*0 packages*" })) {
+                    # Package is installed via Chocolatey, refresh PATH
+                    $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
+
+                    # Check again after PATH refresh
+                    if (Get-Command $dep -ErrorAction SilentlyContinue) {
+                        $found = $true
+                        Write-LogSuccess "Found dependency: $dep (via Chocolatey)"
+                    } else {
+                        Write-LogWarning "Dependency $dep installed via Chocolatey but not in PATH"
+                    }
+                }
+            } catch {
+                Write-LogWarning "Failed to check Chocolatey for $dep`: $($_.Exception.Message)"
+            }
+        }
+
+        # Method 3: Check common installation paths
+        if (-not $found) {
+            $commonPaths = @()
+            switch ($dep) {
+                "sqlite3" {
+                    $commonPaths = @(
+                        "C:\sqlite\sqlite3.exe",
+                        "C:\Program Files\SQLite\sqlite3.exe",
+                        "C:\Program Files\SQLite3\sqlite3.exe",
+                        "C:\ProgramData\chocolatey\lib\SQLite\tools\sqlite3.exe"
+                    )
+                }
+                "jq" {
+                    $commonPaths = @(
+                        "C:\jq\jq.exe",
+                        "C:\Program Files\jq\jq.exe",
+                        "C:\ProgramData\chocolatey\lib\jq\tools\jq.exe"
+                    )
+                }
+                "curl" {
+                    $commonPaths = @(
+                        "C:\Windows\System32\curl.exe",
+                        "C:\Program Files\curl\bin\curl.exe"
+                    )
+                }
+            }
+
+            foreach ($path in $commonPaths) {
+                if (Test-Path $path) {
+                    $pathDir = Split-Path $path -Parent
+                    if ($env:Path -notlike "*$pathDir*") {
+                        $env:Path += ";$pathDir"
+                    }
+                    if (Get-Command $dep -ErrorAction SilentlyContinue) {
+                        $found = $true
+                        Write-LogSuccess "Found dependency: $dep (at $path)"
+                        break
+                    }
+                }
+            }
+        }
+
+        if (-not $found) {
+            $missingDeps += $dep
+            Write-LogWarning "Missing dependency: $dep"
+        }
     }
 
     if ($missingDeps.Count -gt 0) {
         Write-LogWarning "Missing dependencies: $($missingDeps -join ', ')"
 
         if ($AutoInstallDeps) {
-            return Install-Dependencies $missingDeps
+            Write-LogInfo "Auto-installing dependencies..."
+            if (Install-Dependencies $missingDeps) {
+                # Verify installation
+                return Verify-Dependencies $dependencies
+            } else {
+                return $false
+            }
         } else {
             Write-LogInfo "To install dependencies manually:"
             Write-LogInfo "  Using Chocolatey: choco install $($missingDeps -join ' ')"
             Write-LogInfo "  Or run this script with -AutoInstallDeps flag"
 
-            $response = Read-Host "Install missing dependencies now? (y/N)"
-            if ($response -match '^[Yy]$') {
-                return Install-Dependencies $missingDeps
+            $response = Read-Host "Install missing dependencies now? (Y/n)"
+            if ($response -notmatch '^[Nn]$') {
+                if (Install-Dependencies $missingDeps) {
+                    # Verify installation
+                    return Verify-Dependencies $dependencies
+                } else {
+                    return $false
+                }
             } else {
                 Write-LogError "Required dependencies not available"
                 return $false
@@ -260,11 +363,13 @@ function Install-Dependencies {
 
     Write-LogInfo "Installing missing dependencies using Chocolatey..."
 
-    # Check if Chocolatey is available
+    # Check if Chocolatey is available, install if not
     if (-not (Get-Command choco -ErrorAction SilentlyContinue)) {
-        Write-LogError "Chocolatey not found. Please install Chocolatey first:"
-        Write-LogError "https://chocolatey.org/install"
-        return $false
+        Write-LogWarning "Chocolatey not found. Installing Chocolatey automatically..."
+        if (-not (Install-Chocolatey)) {
+            Write-LogError "Failed to install Chocolatey"
+            return $false
+        }
     }
 
     foreach ($dep in $MissingDeps) {
@@ -274,18 +379,302 @@ function Install-Dependencies {
             if ($LASTEXITCODE -eq 0) {
                 Write-LogSuccess "Successfully installed: $dep"
             } else {
-                Write-LogError "Failed to install: $dep"
-                return $false
+                Write-LogError "Failed to install $dep via Chocolatey"
+                # Try alternative installation method
+                if (-not (Install-DependencyAlternative $dep)) {
+                    Write-LogError "All installation methods failed for: $dep"
+                    return $false
+                }
             }
         } catch {
-            Write-LogError "Exception installing $dep`: $($_.Exception.Message)"
-            return $false
+            Write-LogError "Exception installing $dep via Chocolatey: $($_.Exception.Message)"
+            # Try alternative installation method
+            if (-not (Install-DependencyAlternative $dep)) {
+                Write-LogError "All installation methods failed for: $dep"
+                return $false
+            }
         }
     }
 
     Write-LogSuccess "All dependencies installed successfully"
     Write-AuditLog "DEPENDENCIES_INSTALL" "Dependencies installed: $($MissingDeps -join ', ')"
     return $true
+}
+
+# Install Chocolatey package manager
+function Install-Chocolatey {
+    Write-LogInfo "Installing Chocolatey package manager..."
+
+    try {
+        # Check if running as administrator
+        $currentUser = [Security.Principal.WindowsIdentity]::GetCurrent()
+        $principal = New-Object Security.Principal.WindowsPrincipal($currentUser)
+        $isAdmin = $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+
+        if (-not $isAdmin) {
+            Write-LogWarning "Administrator privileges recommended for Chocolatey installation"
+            Write-LogInfo "Attempting installation with current privileges..."
+        }
+
+        # Set execution policy temporarily
+        $originalPolicy = Get-ExecutionPolicy
+        Set-ExecutionPolicy Bypass -Scope Process -Force
+
+        # Download and install Chocolatey
+        Write-LogInfo "Downloading Chocolatey installer..."
+        [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
+
+        $installScript = (New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1')
+
+        Write-LogInfo "Executing Chocolatey installer..."
+        Invoke-Expression $installScript
+
+        # Restore execution policy
+        Set-ExecutionPolicy $originalPolicy -Scope Process -Force
+
+        # Refresh environment variables multiple ways
+        $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
+
+        # Wait longer for installation to complete
+        Write-LogInfo "Waiting for Chocolatey installation to complete..."
+        Start-Sleep -Seconds 10
+
+        # Try multiple verification methods
+        $chocoFound = $false
+
+        # Method 1: Check command availability
+        if (Get-Command choco -ErrorAction SilentlyContinue) {
+            $chocoFound = $true
+        }
+
+        # Method 2: Check standard installation path
+        if (-not $chocoFound -and (Test-Path "C:\ProgramData\chocolatey\bin\choco.exe")) {
+            $env:Path += ";C:\ProgramData\chocolatey\bin"
+            $chocoFound = $true
+        }
+
+        # Method 3: Check user profile path
+        if (-not $chocoFound -and (Test-Path "$env:USERPROFILE\chocolatey\bin\choco.exe")) {
+            $env:Path += ";$env:USERPROFILE\chocolatey\bin"
+            $chocoFound = $true
+        }
+
+        if ($chocoFound) {
+            Write-LogSuccess "Chocolatey installed successfully"
+            Write-AuditLog "CHOCOLATEY_INSTALL" "Chocolatey package manager installed"
+
+            # Get Chocolatey version
+            try {
+                $chocoVersion = & choco --version 2>$null
+                Write-LogInfo "Chocolatey version: $chocoVersion"
+            } catch {
+                Write-LogInfo "Chocolatey installed but version check failed"
+            }
+
+            return $true
+        } else {
+            Write-LogError "Chocolatey installation verification failed"
+            Write-LogError "Please install Chocolatey manually from: https://chocolatey.org/install"
+            return $false
+        }
+
+    } catch {
+        Write-LogError "Exception during Chocolatey installation: $($_.Exception.Message)"
+        Write-LogError "Stack trace: $($_.ScriptStackTrace)"
+        Write-LogError "Please install Chocolatey manually from: https://chocolatey.org/install"
+        return $false
+    }
+}
+
+# Verify dependencies after installation
+function Verify-Dependencies {
+    param([array]$Dependencies)
+
+    Write-LogInfo "Verifying installed dependencies..."
+
+    # Refresh environment variables to pick up newly installed tools
+    $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
+
+    $allVerified = $true
+
+    foreach ($dep in $Dependencies) {
+        Write-LogInfo "Verifying: $dep"
+
+        if (Get-Command $dep -ErrorAction SilentlyContinue) {
+            try {
+                # Test the tool with a simple command
+                switch ($dep) {
+                    "sqlite3" {
+                        $version = & sqlite3 -version 2>$null
+                        if ($LASTEXITCODE -eq 0 -and $version) {
+                            Write-LogSuccess "✅ $dep verified - version: $($version.Split(' ')[0])"
+                        } else {
+                            Write-LogError "❌ $dep found but not working properly"
+                            $allVerified = $false
+                        }
+                    }
+                    "curl" {
+                        $version = & curl --version 2>$null | Select-Object -First 1
+                        if ($LASTEXITCODE -eq 0 -and $version) {
+                            Write-LogSuccess "✅ $dep verified - version: $($version.Split(' ')[1])"
+                        } else {
+                            Write-LogError "❌ $dep found but not working properly"
+                            $allVerified = $false
+                        }
+                    }
+                    "jq" {
+                        $version = & jq --version 2>$null
+                        if ($LASTEXITCODE -eq 0 -and $version) {
+                            Write-LogSuccess "✅ $dep verified - version: $version"
+                        } else {
+                            Write-LogError "❌ $dep found but not working properly"
+                            $allVerified = $false
+                        }
+                    }
+                    default {
+                        Write-LogSuccess "✅ $dep found in PATH"
+                    }
+                }
+            } catch {
+                Write-LogError "❌ $dep verification failed: $($_.Exception.Message)"
+                $allVerified = $false
+            }
+        } else {
+            Write-LogError "❌ $dep not found after installation"
+            $allVerified = $false
+        }
+    }
+
+    if ($allVerified) {
+        Write-LogSuccess "All dependencies verified successfully"
+        Write-AuditLog "DEPENDENCIES_VERIFIED" "All dependencies verified after installation"
+        return $true
+    } else {
+        Write-LogError "Some dependencies failed verification"
+        return $false
+    }
+}
+
+# Alternative dependency installation without Chocolatey
+function Install-DependencyAlternative {
+    param([string]$Dependency)
+
+    Write-LogInfo "Attempting alternative installation for: $Dependency"
+
+    try {
+        switch ($Dependency) {
+            "sqlite3" {
+                return Install-SQLite3Alternative
+            }
+            "jq" {
+                return Install-JQAlternative
+            }
+            "curl" {
+                # curl is usually available on Windows 10+
+                Write-LogInfo "curl should be available on Windows 10+, checking system..."
+                if (Get-Command curl -ErrorAction SilentlyContinue) {
+                    Write-LogSuccess "curl found in system"
+                    return $true
+                } else {
+                    Write-LogError "curl not available and no alternative installation method"
+                    return $false
+                }
+            }
+            default {
+                Write-LogError "No alternative installation method for: $Dependency"
+                return $false
+            }
+        }
+    } catch {
+        Write-LogError "Exception in alternative installation for $Dependency`: $($_.Exception.Message)"
+        return $false
+    }
+}
+
+# Install SQLite3 without Chocolatey
+function Install-SQLite3Alternative {
+    Write-LogInfo "Installing SQLite3 via direct download..."
+
+    try {
+        $tempDir = Join-Path $env:TEMP "sqlite3_install"
+        $installDir = Join-Path $env:ProgramFiles "SQLite3"
+
+        # Create directories
+        New-Item -ItemType Directory -Path $tempDir -Force | Out-Null
+        New-Item -ItemType Directory -Path $installDir -Force | Out-Null
+
+        # Download SQLite3
+        $downloadUrl = "https://www.sqlite.org/2024/sqlite-tools-win-x64-3460000.zip"
+        $zipFile = Join-Path $tempDir "sqlite-tools.zip"
+
+        Write-LogInfo "Downloading SQLite3 from: $downloadUrl"
+        (New-Object System.Net.WebClient).DownloadFile($downloadUrl, $zipFile)
+
+        # Extract
+        Write-LogInfo "Extracting SQLite3..."
+        Expand-Archive -Path $zipFile -DestinationPath $tempDir -Force
+
+        # Find sqlite3.exe and copy to install directory
+        $sqlite3Exe = Get-ChildItem -Path $tempDir -Name "sqlite3.exe" -Recurse | Select-Object -First 1
+        if ($sqlite3Exe) {
+            $sourcePath = Join-Path $tempDir $sqlite3Exe
+            $destPath = Join-Path $installDir "sqlite3.exe"
+            Copy-Item $sourcePath $destPath -Force
+
+            # Add to PATH
+            $currentPath = [Environment]::GetEnvironmentVariable("Path", "Machine")
+            if ($currentPath -notlike "*$installDir*") {
+                [Environment]::SetEnvironmentVariable("Path", "$currentPath;$installDir", "Machine")
+                $env:Path += ";$installDir"
+            }
+
+            Write-LogSuccess "SQLite3 installed successfully to: $installDir"
+            return $true
+        } else {
+            Write-LogError "sqlite3.exe not found in downloaded package"
+            return $false
+        }
+
+    } catch {
+        Write-LogError "Failed to install SQLite3 alternatively: $($_.Exception.Message)"
+        return $false
+    } finally {
+        # Cleanup
+        if (Test-Path $tempDir) {
+            Remove-Item $tempDir -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+}
+
+# Install jq without Chocolatey
+function Install-JQAlternative {
+    Write-LogInfo "Installing jq via direct download..."
+
+    try {
+        $installDir = Join-Path $env:ProgramFiles "jq"
+        New-Item -ItemType Directory -Path $installDir -Force | Out-Null
+
+        # Download jq
+        $downloadUrl = "https://github.com/jqlang/jq/releases/download/jq-1.7.1/jq-windows-amd64.exe"
+        $jqExe = Join-Path $installDir "jq.exe"
+
+        Write-LogInfo "Downloading jq from: $downloadUrl"
+        (New-Object System.Net.WebClient).DownloadFile($downloadUrl, $jqExe)
+
+        # Add to PATH
+        $currentPath = [Environment]::GetEnvironmentVariable("Path", "Machine")
+        if ($currentPath -notlike "*$installDir*") {
+            [Environment]::SetEnvironmentVariable("Path", "$currentPath;$installDir", "Machine")
+            $env:Path += ";$installDir"
+        }
+
+        Write-LogSuccess "jq installed successfully to: $installDir"
+        return $true
+
+    } catch {
+        Write-LogError "Failed to install jq alternatively: $($_.Exception.Message)"
+        return $false
+    }
 }
 
 # Legacy functions removed - now handled by platform implementations
@@ -307,8 +696,12 @@ function Invoke-WindowsPlatform {
         return Invoke-EmbeddedWindowsImplementation -Operation $Operation -DryRun $DryRun -Verbose $Verbose
     }
 
-    # Check if platforms directory exists
-    $platformsDir = Join-Path $PROJECT_ROOT "platforms"
+    # Check if platforms directory exists (support both src and legacy structure)
+    if ($script:USE_SRC_STRUCTURE) {
+        $platformsDir = Join-Path $PROJECT_ROOT "src\platforms"
+    } else {
+        $platformsDir = Join-Path $PROJECT_ROOT "platforms"
+    }
     $windowsScript = Join-Path $platformsDir "windows.ps1"
 
     if (Test-Path $windowsScript) {
@@ -781,7 +1174,7 @@ function Main {
     # Check administrator rights (warn only)
     Test-AdminRights | Out-Null
 
-    # Test dependencies
+    # Test dependencies with automatic installation
     if (-not (Test-Dependencies)) {
         Write-LogError "Dependency validation failed"
         return 1

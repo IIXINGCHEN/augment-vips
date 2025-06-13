@@ -93,10 +93,10 @@ parse_arguments() {
 # Detect operating system platform
 detect_platform() {
     local platform=""
-    
+
     if [[ -n "${FORCE_PLATFORM}" ]]; then
         platform="${FORCE_PLATFORM}"
-        log_info "Platform forced to: ${platform}"
+        echo "INFO: Platform forced to: ${platform}" >&2
     else
         case "$(uname -s)" in
             Linux*)
@@ -109,14 +109,14 @@ detect_platform() {
                 platform="windows"
                 ;;
             *)
-                log_error "Unsupported platform: $(uname -s)"
+                echo "ERROR: Unsupported platform: $(uname -s)" >&2
                 return 1
                 ;;
         esac
-        
-        log_info "Detected platform: ${platform}"
+
+        echo "INFO: Detected platform: ${platform}" >&2
     fi
-    
+
     echo "${platform}"
 }
 
@@ -124,45 +124,55 @@ detect_platform() {
 validate_platform_implementation() {
     local platform="$1"
     local implementation_file=""
-    
+
+    # Check for src-based structure first, then legacy
+    local platforms_dir="${SCRIPT_DIR}/src/platforms"
+    if [[ ! -d "${platforms_dir}" ]]; then
+        platforms_dir="${SCRIPT_DIR}/platforms"
+    fi
+
     case "${platform}" in
         "windows")
-            implementation_file="${SCRIPT_DIR}/platforms/windows.ps1"
+            implementation_file="${platforms_dir}/windows.ps1"
             ;;
         "linux")
-            implementation_file="${SCRIPT_DIR}/platforms/linux.sh"
+            implementation_file="${platforms_dir}/linux.sh"
             ;;
         "macos")
-            implementation_file="${SCRIPT_DIR}/platforms/macos.sh"
+            implementation_file="${platforms_dir}/macos.sh"
             ;;
         *)
-            log_error "Unknown platform: ${platform}"
+            echo "ERROR: Unknown platform: ${platform}" >&2
             return 1
             ;;
     esac
-    
+
     if [[ ! -f "${implementation_file}" ]]; then
-        log_error "Platform implementation not found: ${implementation_file}"
+        echo "ERROR: Platform implementation not found: ${implementation_file}" >&2
         return 1
     fi
-    
+
     if [[ ! -x "${implementation_file}" ]]; then
-        log_info "Making platform implementation executable: ${implementation_file}"
+        echo "INFO: Making platform implementation executable: ${implementation_file}" >&2
         chmod +x "${implementation_file}"
     fi
-    
-    log_success "Platform implementation validated: ${implementation_file}"
+
+    echo "SUCCESS: Platform implementation validated: ${implementation_file}" >&2
     echo "${implementation_file}"
 }
 
 # Check core modules availability
 check_core_modules() {
     log_info "Checking core modules availability..."
-    
-    local core_dir="${SCRIPT_DIR}/core"
+
+    # Check for src-based structure first, then legacy
+    local core_dir="${SCRIPT_DIR}/src/core"
     if [[ ! -d "${core_dir}" ]]; then
-        log_error "Core modules directory not found: ${core_dir}"
-        return 1
+        core_dir="${SCRIPT_DIR}/core"
+        if [[ ! -d "${core_dir}" ]]; then
+            log_error "Core modules directory not found: ${SCRIPT_DIR}/src/core or ${SCRIPT_DIR}/core"
+            return 1
+        fi
     fi
     
     local required_modules=(
@@ -200,13 +210,26 @@ check_core_modules() {
 check_project_structure() {
     log_info "Checking project structure..."
     
-    local required_dirs=(
-        "core"
-        "platforms"
-        "config"
-        "logs"
-        "docs"
-    )
+    # Check for src-based structure first
+    local use_src_structure=false
+    if [[ -d "${SCRIPT_DIR}/src" ]]; then
+        use_src_structure=true
+        local required_dirs=(
+            "src/core"
+            "src/platforms"
+            "src/config"
+            "logs"
+            "docs"
+        )
+    else
+        local required_dirs=(
+            "core"
+            "platforms"
+            "config"
+            "logs"
+            "docs"
+        )
+    fi
     
     local missing_dirs=()
     
@@ -322,14 +345,18 @@ main() {
     
     # Detect platform
     local platform
-    if ! platform=$(detect_platform); then
+    platform=$(detect_platform)
+    local detect_exit_code=$?
+    if [[ ${detect_exit_code} -ne 0 ]]; then
         log_error "Platform detection failed"
         return 1
     fi
     
     # Validate platform implementation
     local implementation_file
-    if ! implementation_file=$(validate_platform_implementation "${platform}"); then
+    implementation_file=$(validate_platform_implementation "${platform}")
+    local validate_exit_code=$?
+    if [[ ${validate_exit_code} -ne 0 ]]; then
         log_error "Platform implementation validation failed"
         return 1
     fi
@@ -368,12 +395,14 @@ OPTIONS:
 OPERATIONS:
     clean                      Clean VS Code databases (remove Augment entries)
     modify-ids                 Modify VS Code telemetry IDs
+    migrate                    Complete 6-step migration workflow
     all                        Perform both cleaning and ID modification
     help                       Show this help message
 
 EXAMPLES:
     $0 --operation clean
     $0 --operation modify-ids --dry-run
+    $0 --operation migrate --dry-run
     $0 --operation all --verbose
     $0 --platform windows --operation clean
 
