@@ -514,20 +514,60 @@ function Verify-Dependencies {
                         }
                     }
                     "curl" {
-                        $version = & curl --version 2>$null | Select-Object -First 1
-                        if ($LASTEXITCODE -eq 0 -and $version) {
-                            Write-LogSuccess "✅ $dep verified - version: $($version.Split(' ')[1])"
-                        } else {
-                            Write-LogError "❌ $dep found but not working properly"
+                        try {
+                            $version = & curl --version 2>$null | Select-Object -First 1
+                            if ($LASTEXITCODE -eq 0 -and $version) {
+                                Write-LogSuccess "✅ $dep verified - version: $($version.Split(' ')[1])"
+                            } else {
+                                Write-LogError "❌ $dep verification failed: $($_.Exception.Message)"
+                                $allVerified = $false
+                            }
+                        } catch {
+                            Write-LogError "❌ $dep verification failed: $($_.Exception.Message)"
                             $allVerified = $false
                         }
                     }
                     "jq" {
-                        $version = & jq --version 2>$null
-                        if ($LASTEXITCODE -eq 0 -and $version) {
-                            Write-LogSuccess "✅ $dep verified - version: $version"
-                        } else {
-                            Write-LogError "❌ $dep found but not working properly"
+                        # Try multiple methods to find jq
+                        $jqFound = $false
+
+                        # Method 1: Check if already in PATH
+                        if (Get-Command jq -ErrorAction SilentlyContinue) {
+                            try {
+                                $version = & jq --version 2>$null
+                                if ($LASTEXITCODE -eq 0 -and $version) {
+                                    Write-LogSuccess "✅ $dep verified - version: $version"
+                                    $jqFound = $true
+                                }
+                            } catch {
+                                # Continue to other methods
+                            }
+                        }
+
+                        # Method 2: Check Chocolatey installation path
+                        if (-not $jqFound) {
+                            $chocoJqPath = "C:\ProgramData\chocolatey\lib\jq\tools\jq.exe"
+                            if (Test-Path $chocoJqPath) {
+                                $jqDir = Split-Path $chocoJqPath -Parent
+                                if ($env:Path -notlike "*$jqDir*") {
+                                    $env:Path += ";$jqDir"
+                                }
+                                if (Get-Command jq -ErrorAction SilentlyContinue) {
+                                    try {
+                                        $version = & jq --version 2>$null
+                                        if ($LASTEXITCODE -eq 0 -and $version) {
+                                            Write-LogSuccess "✅ $dep verified - version: $version (found in Chocolatey)"
+                                            $jqFound = $true
+                                        }
+                                    } catch {
+                                        # Continue to other methods
+                                    }
+                                }
+                            }
+                        }
+
+                        if (-not $jqFound) {
+                            Write-LogError "❌ $dep not found after installation"
                             $allVerified = $false
                         }
                     }
