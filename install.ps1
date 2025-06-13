@@ -38,6 +38,18 @@ function Write-LogInfo {
     }
 }
 
+function Write-LogDebug {
+    param([string]$Message)
+    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+    # Only show debug messages if Verbose is enabled
+    if ($Verbose) {
+        Write-Host "[$timestamp] [DEBUG] $Message" -ForegroundColor Gray
+    }
+    if ($script:LogFile) {
+        Add-Content -Path $script:LogFile -Value "[$timestamp] [DEBUG] $Message" -ErrorAction SilentlyContinue
+    }
+}
+
 function Write-LogSuccess {
     param([string]$Message)
     $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
@@ -1046,11 +1058,11 @@ function Test-RemoteExecution {
             $scriptPath = $MyInvocation.MyCommand.Definition
         }
 
-        Write-LogInfo "Script path: $scriptPath"
+        Write-LogDebug "Script path: $scriptPath"
 
         if ([string]::IsNullOrEmpty($scriptPath)) {
             # No script path usually means piped execution
-            Write-LogInfo "No script path - checking current directory for project structure"
+            Write-LogDebug "No script path - checking current directory for project structure"
 
             # Check if we're in a project directory
             $currentDir = Get-Location
@@ -1058,52 +1070,52 @@ function Test-RemoteExecution {
             $coreDir = Join-Path $currentDir.Path "core"
 
             if ((Test-Path $platformsDir) -or (Test-Path $coreDir)) {
-                Write-LogInfo "Project structure found in current directory - local execution"
+                Write-LogDebug "Project structure found in current directory - local execution"
                 $isRemote = $false
             } else {
-                Write-LogInfo "No project structure in current directory - likely piped execution"
+                Write-LogDebug "No project structure in current directory - likely piped execution"
                 $isRemote = $true
             }
         } elseif ($scriptPath -match "^http" -or $scriptPath -match "TemporaryFile") {
-            Write-LogInfo "Script path indicates remote source"
+            Write-LogDebug "Script path indicates remote source"
             $isRemote = $true
         } elseif ($scriptPath -match "Temp\\.*\.ps1$") {
             # Script is in temp directory with .ps1 extension (likely downloaded)
-            Write-LogInfo "Script in temp directory"
+            Write-LogDebug "Script in temp directory"
             $isRemote = $true
         } else {
             # Check if platforms directory exists relative to script
             $scriptDir = Split-Path -Parent $scriptPath
             $platformsDir = Join-Path $scriptDir "platforms"
-            Write-LogInfo "Checking platforms directory: $platformsDir"
+            Write-LogDebug "Checking platforms directory: $platformsDir"
 
             if (Test-Path $platformsDir) {
-                Write-LogInfo "Platforms directory found - local execution"
+                Write-LogDebug "Platforms directory found - local execution"
                 $isRemote = $false
             } else {
-                Write-LogInfo "Platforms directory not found"
+                Write-LogDebug "Platforms directory not found"
                 # This might be remote execution if platforms directory doesn't exist
                 # But only if we're also not in a development environment
                 $gitDir = Join-Path $scriptDir ".git"
                 $coreDir = Join-Path $scriptDir "core"
-                Write-LogInfo "Checking git dir: $gitDir, core dir: $coreDir"
+                Write-LogDebug "Checking git dir: $gitDir, core dir: $coreDir"
 
                 if (-not (Test-Path $gitDir) -and -not (Test-Path $coreDir)) {
-                    Write-LogInfo "Neither git nor core directory found - assuming remote"
+                    Write-LogDebug "Neither git nor core directory found - assuming remote"
                     $isRemote = $true
                 } else {
-                    Write-LogInfo "Development environment detected - local execution"
+                    Write-LogDebug "Development environment detected - local execution"
                     $isRemote = $false
                 }
             }
         }
     } catch {
         # If we can't determine, assume local for safety
-        Write-LogInfo "Exception in remote detection: $($_.Exception.Message)"
+        Write-LogDebug "Exception in remote detection: $($_.Exception.Message)"
         $isRemote = $false
     }
 
-    Write-LogInfo "Remote execution detected: $isRemote"
+    Write-LogDebug "Remote execution detected: $isRemote"
     return $isRemote
 }
 
@@ -1150,11 +1162,16 @@ function Get-DefaultOperation {
             Write-Host "  3. Create automatic backups before changes" -ForegroundColor White
             Write-Host ""
 
-            $response = Read-Host "Continue with operation? (Y/n)"
+            Write-Host "Continue with operation? (Y/n): " -NoNewline -ForegroundColor Yellow
+            $response = Read-Host
+            if ([string]::IsNullOrWhiteSpace($response)) {
+                $response = "Y"  # Default to Yes
+            }
             if ($response -match '^[Nn]$') {
                 Write-LogInfo "Operation cancelled by user"
                 return "help"
             }
+            Write-LogInfo "Proceeding with operation..."
         }
 
         return "all"
