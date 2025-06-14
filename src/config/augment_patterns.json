@@ -1,0 +1,157 @@
+{
+  "version": "2.0.0",
+  "last_updated": "2025-01-27T16:00:00Z",
+  "description": "Unified configuration for all Augment VIP data patterns and formats",
+  
+  "database_patterns": {
+    "augment_core": [
+      "%augment%",
+      "Augment.%",
+      "augment.%",
+      "%augment-chat%",
+      "%augment-panel%",
+      "%augment-view%",
+      "%augment-extension%",
+      "%vscode-augment%",
+      "%augmentcode%",
+      "%augment.code%",
+      "%memento/webviewView.augment%",
+      "%workbench.view.extension.augment%",
+      "%workbench.panel.augment%",
+      "%extensionHost.augment%"
+    ],
+    
+    "telemetry": [
+      "%telemetry%",
+      "%machineId%",
+      "%deviceId%",
+      "%sqmId%",
+      "%machine-id%",
+      "%device-id%",
+      "%sqm-id%",
+      "%sessionId%",
+      "%session-id%",
+      "%userId%",
+      "%user-id%",
+      "%installationId%",
+      "%installation-id%"
+    ],
+    
+    "trial_data": [
+      "%context7%",
+      "%trial%",
+      "%trialPrompt%",
+      "%trial-prompt%",
+      "%licenseCheck%",
+      "%license-check%",
+      "%trialExpired%",
+      "%trial-expired%",
+      "%trialRemaining%",
+      "%trial-remaining%",
+      "%trialStatus%",
+      "%trial-status%",
+      "%trialLimit%",
+      "%trial-limit%",
+      "%trialCount%",
+      "%trial-count%",
+      "%trialUsage%",
+      "%trial-usage%",
+      "%trialActivation%",
+      "%trial-activation%",
+      "%trialPeriod%",
+      "%trial-period%",
+      "%trialStartDate%",
+      "%trial-start-date%",
+      "%trialEndDate%",
+      "%trial-end-date%",
+      "%subscription%",
+      "%subscriptionStatus%",
+      "%subscription-status%",
+      "%licenseKey%",
+      "%license-key%",
+      "%licenseType%",
+      "%license-type%",
+      "%licenseExpiry%",
+      "%license-expiry%"
+    ],
+    
+    "analytics": [
+      "%extensionTelemetry%",
+      "%extension-telemetry%",
+      "%analytics%",
+      "%tracking%",
+      "%metrics%",
+      "%usage%",
+      "%statistics%"
+    ],
+    
+    "ai_services": [
+      "%aiService%",
+      "%ai-service%",
+      "%mlService%",
+      "%ml-service%",
+      "%copilot%",
+      "%github.copilot%"
+    ],
+    
+    "authentication": [
+      "%authToken%",
+      "%auth-token%",
+      "%accessToken%",
+      "%access-token%",
+      "%refreshToken%",
+      "%refresh-token%"
+    ]
+  },
+  
+  "telemetry_fields": {
+    "machine_id": "telemetry.machineId",
+    "device_id": "telemetry.devDeviceId",
+    "sqm_id": "telemetry.sqmId",
+    "fallback_fields": {
+      "machine_id_alt": "machineId",
+      "device_id_alt": "deviceId", 
+      "sqm_id_alt": "sqmId"
+    }
+  },
+  
+  "file_paths": {
+    "storage_files": [
+      "User/storage.json",
+      "User/globalStorage/storage.json"
+    ],
+    
+    "token_paths": [
+      "User/globalStorage/ms-vscode.vscode-account/*",
+      "User/globalStorage/github.vscode-pull-request-github/*",
+      "User/globalStorage/ms-vscode-remote.remote-*/*",
+      "User/globalStorage/ms-vscode.azure-account/*",
+      "User/globalStorage/*.authentication/*",
+      "User/workspaceStorage/*/vscode.authentication",
+      "User/workspaceStorage/*/ms-vscode.vscode-account"
+    ],
+    
+    "session_paths": [
+      "User/workspaceStorage/*/ms-vscode.vscode-account",
+      "User/globalStorage/ms-vscode.vscode-account",
+      "User/globalStorage/vscode.authentication",
+      "User/state/*authentication*",
+      "User/logs/*authentication*"
+    ]
+  },
+  
+  "sql_generation": {
+    "case_sensitive": false,
+    "use_lower_function": true,
+    "transaction_mode": "IMMEDIATE",
+    "vacuum_after_delete": true
+  },
+  
+  "id_generation": {
+    "machine_id_length": 64,
+    "machine_id_format": "hex",
+    "device_id_format": "uuid",
+    "sqm_id_format": "uuid",
+    "entropy_sources": ["openssl", "urandom", "system"]
+  }
+}

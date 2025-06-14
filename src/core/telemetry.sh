@@ -24,6 +24,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/common.sh"
 source "$(dirname "${BASH_SOURCE[0]}")/security.sh"
 source "$(dirname "${BASH_SOURCE[0]}")/validation.sh"
 source "$(dirname "${BASH_SOURCE[0]}")/backup.sh"
+source "$(dirname "${BASH_SOURCE[0]}")/config_loader.sh"
 
 # Telemetry constants
 if [[ -z "${TELEMETRY_FIELDS:-}" ]]; then
@@ -50,26 +51,40 @@ declare -A TELEMETRY_STATS=()
 # Initialize telemetry module
 init_telemetry() {
     log_info "Initializing telemetry processing module..."
-    
+
+    # Load unified configuration
+    if ! load_augment_config; then
+        log_error "Failed to load unified configuration"
+        return 1
+    fi
+
+    # Verify telemetry field mappings are loaded
+    if [[ -z "${MACHINE_ID_FIELD}" || -z "${DEVICE_ID_FIELD}" || -z "${SQM_ID_FIELD}" ]]; then
+        log_error "Telemetry field mappings not properly loaded from configuration"
+        return 1
+    fi
+
+    log_info "Loaded telemetry field mappings: machine=${MACHINE_ID_FIELD}, device=${DEVICE_ID_FIELD}, sqm=${SQM_ID_FIELD}"
+
     # Check jq availability
     if ! is_command_available jq; then
         log_error "jq is required but not available"
         return 1
     fi
-    
+
     # Verify jq functionality
     if ! verify_jq_functionality; then
         log_error "jq functionality verification failed"
         return 1
     fi
-    
+
     # Initialize statistics
     TELEMETRY_STATS["files_processed"]=0
     TELEMETRY_STATS["ids_modified"]=0
     TELEMETRY_STATS["errors_encountered"]=0
     TELEMETRY_STATS["backups_created"]=0
-    
-    audit_log "TELEMETRY_INIT" "Telemetry processing module initialized"
+
+    audit_log "TELEMETRY_INIT" "Telemetry processing module initialized with unified configuration"
     log_success "Telemetry processing module initialized"
 }
 
@@ -251,138 +266,415 @@ count_existing_telemetry_fields() {
     echo "${count}"
 }
 
-# Modify storage file with new IDs
+# Verify file permissions and accessibility
+verify_file_permissions() {
+    local file_path="$1"
+    local operation="${2:-write}"  # read, write, execute
+
+    log_debug "Verifying file permissions for: ${file_path}"
+
+    if [[ ! -f "${file_path}" ]]; then
+        log_error "File does not exist: ${file_path}"
+        return 1
+    fi
+
+    case "${operation}" in
+        "read")
+            if [[ ! -r "${file_path}" ]]; then
+                log_error "File is not readable: ${file_path}"
+                return 1
+            fi
+            ;;
+        "write")
+            if [[ ! -w "${file_path}" ]]; then
+                log_error "File is not writable: ${file_path}"
+                return 1
+            fi
+            ;;
+        "execute")
+            if [[ ! -x "${file_path}" ]]; then
+                log_error "File is not executable: ${file_path}"
+                return 1
+            fi
+            ;;
+    esac
+
+    # Check if file is locked by another process
+    if command -v lsof >/dev/null 2>&1; then
+        local lock_info
+        lock_info=$(lsof "${file_path}" 2>/dev/null)
+        if [[ -n "${lock_info}" ]]; then
+            log_warn "File may be locked by another process: ${file_path}"
+            log_debug "Lock info: ${lock_info}"
+        fi
+    fi
+
+    log_debug "File permissions verified successfully"
+    return 0
+}
+
+# Clear system cache for modified files
+clear_system_cache() {
+    local file_path="$1"
+
+    log_debug "Clearing system cache for: ${file_path}"
+
+    # Clear filesystem cache if possible
+    if command -v sync >/dev/null 2>&1; then
+        sync
+        log_debug "Filesystem sync completed"
+    fi
+
+    # Clear page cache for the specific file (Linux)
+    if [[ -f "/proc/sys/vm/drop_caches" ]] && [[ -w "/proc/sys/vm/drop_caches" ]]; then
+        echo 1 > /proc/sys/vm/drop_caches 2>/dev/null || log_debug "Could not clear page cache"
+    fi
+
+    # Force file metadata refresh
+    if command -v stat >/dev/null 2>&1; then
+        stat "${file_path}" >/dev/null 2>&1
+    fi
+
+    log_debug "System cache clearing completed"
+}
+
+# Enhanced modify storage file with atomic operations and verification
 modify_storage_file() {
     local storage_file="$1"
     local machine_id="$2"
     local device_id="$3"
     local sqm_id="$4"
-    
-    log_debug "Modifying storage file with new IDs"
-    
-    # Create temporary file for atomic operation
+
+    log_debug "Modifying storage file with new IDs: ${storage_file}"
+
+    # Verify file permissions before modification
+    if ! verify_file_permissions "${storage_file}" "write"; then
+        log_error "Permission verification failed for: ${storage_file}"
+        return 1
+    fi
+
+    # Create secure temporary file in same directory for atomic operation
+    local storage_dir
+    storage_dir=$(dirname "${storage_file}")
     local temp_file
-    temp_file=$(mktemp) || {
-        log_error "Failed to create temporary file"
+    temp_file=$(mktemp "${storage_dir}/.tmp_telemetry_XXXXXX") || {
+        log_error "Failed to create temporary file in: ${storage_dir}"
         return 1
     }
-    
+
     # Ensure cleanup of temp file
     trap "rm -f '${temp_file}'" EXIT
-    
-    # Modify JSON with new telemetry IDs
+
+    # Create backup before modification
+    local backup_file
+    backup_file=$(create_storage_backup "${storage_file}")
+    if [[ $? -ne 0 ]]; then
+        log_warn "Failed to create backup, proceeding with caution"
+    fi
+
+    # Modify JSON with new telemetry IDs using configuration-driven field mapping
+    log_debug "Applying ID modifications using configured field mappings..."
     if jq \
         --arg machine_id "${machine_id}" \
         --arg device_id "${device_id}" \
         --arg sqm_id "${sqm_id}" \
+        --arg machine_field "${MACHINE_ID_FIELD}" \
+        --arg device_field "${DEVICE_ID_FIELD}" \
+        --arg sqm_field "${SQM_ID_FIELD}" \
+        --arg machine_alt_field "${MACHINE_ID_ALT_FIELD}" \
+        --arg device_alt_field "${DEVICE_ID_ALT_FIELD}" \
+        --arg sqm_alt_field "${SQM_ID_ALT_FIELD}" \
         '.
-        | .["telemetry.machineId"] = $machine_id
-        | .["telemetry.devDeviceId"] = $device_id
-        | .["telemetry.sqmId"] = $sqm_id
+        | .[$machine_field] = $machine_id
+        | .[$device_field] = $device_id
+        | .[$sqm_field] = $sqm_id
+        | .[$machine_alt_field] = $machine_id
+        | .[$device_alt_field] = $device_id
+        | .[$sqm_alt_field] = $sqm_id
         ' \
         "${storage_file}" > "${temp_file}"; then
-        
-        # Validate the modified JSON
+
+        # Validate the modified JSON structure and content
         if jq empty "${temp_file}" 2>/dev/null; then
-            # Atomically replace original file
-            if mv "${temp_file}" "${storage_file}"; then
-                log_debug "Storage file successfully modified"
-                return 0
+            # Verify the IDs were actually set correctly using configured field mappings
+            local verify_machine_id verify_device_id verify_sqm_id
+            verify_machine_id=$(jq -r --arg field "${MACHINE_ID_FIELD}" '.[$field] // "null"' "${temp_file}")
+            verify_device_id=$(jq -r --arg field "${DEVICE_ID_FIELD}" '.[$field] // "null"' "${temp_file}")
+            verify_sqm_id=$(jq -r --arg field "${SQM_ID_FIELD}" '.[$field] // "null"' "${temp_file}")
+
+            if [[ "${verify_machine_id}" == "${machine_id}" ]] && \
+               [[ "${verify_device_id}" == "${device_id}" ]] && \
+               [[ "${verify_sqm_id}" == "${sqm_id}" ]]; then
+
+                # Atomically replace original file using rename (atomic on most filesystems)
+                if mv "${temp_file}" "${storage_file}"; then
+                    log_success "Storage file successfully modified with new IDs"
+
+                    # Clear system cache to ensure changes take effect
+                    clear_system_cache "${storage_file}"
+
+                    # Verify modification persistence
+                    sleep 0.1  # Brief pause to ensure filesystem consistency
+                    local final_machine_id
+                    final_machine_id=$(jq -r '.["telemetry.machineId"] // .["machineId"] // "null"' "${storage_file}" 2>/dev/null)
+
+                    if [[ "${final_machine_id}" == "${machine_id}" ]]; then
+                        log_debug "ID modification verified successfully"
+                        audit_log "TELEMETRY_MODIFY" "IDs modified in ${storage_file}: machine=${machine_id}, device=${device_id}, sqm=${sqm_id}"
+                        return 0
+                    else
+                        log_error "ID modification verification failed"
+                        # Restore from backup if verification fails
+                        if [[ -n "${backup_file}" && -f "${backup_file}" ]]; then
+                            restore_storage_backup "${backup_file}" "${storage_file}"
+                        fi
+                        return 1
+                    fi
+                else
+                    log_error "Failed to replace storage file atomically"
+                    return 1
+                fi
             else
-                log_error "Failed to replace storage file"
+                log_error "ID verification failed after modification"
+                log_debug "Expected: machine=${machine_id}, device=${device_id}, sqm=${sqm_id}"
+                log_debug "Got: machine=${verify_machine_id}, device=${verify_device_id}, sqm=${verify_sqm_id}"
                 return 1
             fi
         else
-            log_error "Modified JSON is invalid"
+            log_error "Modified JSON is invalid or corrupted"
             return 1
         fi
     else
-        log_error "Failed to modify JSON content"
+        log_error "Failed to modify JSON content with jq"
         return 1
     fi
 }
 
-# Generate machine ID (64-character hex string)
+# Enhanced machine ID generation with multiple entropy sources
 generate_machine_id() {
     local machine_id=""
-    
-    # Try different methods to generate random hex
+    local entropy_sources=0
+
+    log_debug "Generating machine ID with enhanced entropy"
+
+    # Method 1: OpenSSL (preferred for cryptographic strength)
     if is_command_available openssl; then
         machine_id=$(openssl rand -hex 32 2>/dev/null || echo "")
-    elif is_command_available xxd; then
+        if [[ ${#machine_id} -eq ${MACHINE_ID_LENGTH} ]]; then
+            entropy_sources=$((entropy_sources + 1))
+            log_debug "Machine ID generated using OpenSSL"
+        else
+            machine_id=""
+        fi
+    fi
+
+    # Method 2: /dev/urandom with xxd
+    if [[ -z "${machine_id}" ]] && is_command_available xxd && [[ -r /dev/urandom ]]; then
         machine_id=$(head -c 32 /dev/urandom 2>/dev/null | xxd -p -c 32 | tr -d '\n' || echo "")
-    elif [[ -r /dev/urandom ]]; then
+        if [[ ${#machine_id} -eq ${MACHINE_ID_LENGTH} ]]; then
+            entropy_sources=$((entropy_sources + 1))
+            log_debug "Machine ID generated using /dev/urandom + xxd"
+        else
+            machine_id=""
+        fi
+    fi
+
+    # Method 3: /dev/urandom with od
+    if [[ -z "${machine_id}" ]] && [[ -r /dev/urandom ]]; then
         machine_id=$(head -c 32 /dev/urandom 2>/dev/null | od -An -tx1 | tr -d ' \n' || echo "")
+        if [[ ${#machine_id} -eq ${MACHINE_ID_LENGTH} ]]; then
+            entropy_sources=$((entropy_sources + 1))
+            log_debug "Machine ID generated using /dev/urandom + od"
+        else
+            machine_id=""
+        fi
     fi
-    
-    # Fallback method using RANDOM
+
+    # Enhanced fallback method with multiple entropy sources
     if [[ -z "${machine_id}" || ${#machine_id} -ne ${MACHINE_ID_LENGTH} ]]; then
+        log_debug "Using enhanced fallback method for machine ID generation"
         machine_id=""
+
+        # Seed RANDOM with multiple sources for better entropy
+        local seed_value=0
+        seed_value=$((seed_value + $(date +%s%N 2>/dev/null || date +%s)))  # Nanosecond timestamp
+        seed_value=$((seed_value + $$))  # Process ID
+        seed_value=$((seed_value + $PPID))  # Parent process ID
+        seed_value=$((seed_value + $(id -u 2>/dev/null || echo 1000)))  # User ID
+
+        # Add system-specific entropy if available
+        if [[ -r /proc/uptime ]]; then
+            local uptime_entropy
+            uptime_entropy=$(awk '{print int($1*1000000)}' /proc/uptime 2>/dev/null || echo 0)
+            seed_value=$((seed_value + uptime_entropy))
+        fi
+
+        if [[ -r /proc/loadavg ]]; then
+            local load_entropy
+            load_entropy=$(awk '{print int($1*1000)}' /proc/loadavg 2>/dev/null || echo 0)
+            seed_value=$((seed_value + load_entropy))
+        fi
+
+        # Set enhanced seed
+        RANDOM=${seed_value}
+
+        # Generate ID with additional mixing
         for ((i=0; i<${MACHINE_ID_LENGTH}; i++)); do
-            machine_id="${machine_id}$(printf '%x' $((RANDOM % 16)))"
+            # Mix multiple random sources
+            local rand1=$((RANDOM % 16))
+            local rand2=$((RANDOM % 16))
+            local rand3=$((($(date +%N 2>/dev/null || echo 0) + i) % 16))
+            local final_rand=$(((rand1 + rand2 + rand3) % 16))
+            machine_id="${machine_id}$(printf '%x' ${final_rand})"
         done
+
+        entropy_sources=$((entropy_sources + 1))
+        log_debug "Machine ID generated using enhanced fallback method"
     fi
-    
+
     # Validate generated ID
     if [[ ${#machine_id} -eq ${MACHINE_ID_LENGTH} && "${machine_id}" =~ ${HEX_PATTERN} ]]; then
+        # Additional uniqueness check - ensure it's not all zeros or all same character
+        if [[ "${machine_id}" =~ ^0+$ ]] || [[ "${machine_id}" =~ ^(.)\1*$ ]]; then
+            log_warn "Generated machine ID has low entropy, regenerating..."
+            # Recursive call with different seed (limited to prevent infinite recursion)
+            if [[ "${FUNCNAME[1]}" != "${FUNCNAME[0]}" ]]; then
+                sleep 0.001  # Brief delay to change timestamp
+                generate_machine_id
+                return $?
+            fi
+        fi
+
+        log_debug "Machine ID generated successfully with ${entropy_sources} entropy source(s)"
         echo "${machine_id}"
+        return 0
     else
-        log_error "Failed to generate valid machine ID"
+        log_error "Failed to generate valid machine ID (length: ${#machine_id}, pattern match: $(echo "${machine_id}" | grep -E "${HEX_PATTERN}" >/dev/null && echo "yes" || echo "no"))"
         return 1
     fi
 }
 
-# Generate UUID v4
+# Enhanced UUID v4 generation with improved entropy and validation
 generate_uuid_v4() {
     local uuid=""
-    
-    # Try different methods to generate UUID
+    local generation_method=""
+
+    log_debug "Generating UUID v4 with enhanced entropy"
+
+    # Method 1: System uuidgen (preferred)
     if is_command_available uuidgen; then
         uuid=$(uuidgen 2>/dev/null | tr '[:upper:]' '[:lower:]' || echo "")
-    elif is_command_available python3; then
-        uuid=$(python3 -c "import uuid; print(str(uuid.uuid4()))" 2>/dev/null || echo "")
-    elif is_command_available python; then
-        uuid=$(python -c "import uuid; print(str(uuid.uuid4()))" 2>/dev/null || echo "")
+        if [[ "${uuid}" =~ ${UUID_PATTERN} ]]; then
+            generation_method="uuidgen"
+            log_debug "UUID generated using system uuidgen"
+        else
+            uuid=""
+        fi
     fi
-    
-    # Fallback method using random data
+
+    # Method 2: Python3 uuid module
+    if [[ -z "${uuid}" ]] && is_command_available python3; then
+        uuid=$(python3 -c "import uuid; print(str(uuid.uuid4()))" 2>/dev/null || echo "")
+        if [[ "${uuid}" =~ ${UUID_PATTERN} ]]; then
+            generation_method="python3"
+            log_debug "UUID generated using Python3"
+        else
+            uuid=""
+        fi
+    fi
+
+    # Method 3: Python2 uuid module
+    if [[ -z "${uuid}" ]] && is_command_available python; then
+        uuid=$(python -c "import uuid; print(str(uuid.uuid4()))" 2>/dev/null || echo "")
+        if [[ "${uuid}" =~ ${UUID_PATTERN} ]]; then
+            generation_method="python2"
+            log_debug "UUID generated using Python2"
+        else
+            uuid=""
+        fi
+    fi
+
+    # Enhanced fallback method with proper UUID v4 structure
     if [[ -z "${uuid}" || ! "${uuid}" =~ ${UUID_PATTERN} ]]; then
-        # Generate UUID v4 manually
+        log_debug "Using enhanced fallback method for UUID generation"
+        generation_method="fallback"
+
+        # Enhanced entropy seeding
+        local seed_base=$(($(date +%s%N 2>/dev/null || date +%s) + $$ + $PPID))
+        RANDOM=${seed_base}
+
+        # Generate UUID v4 with proper structure: xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx
         local hex_chars="0123456789abcdef"
         uuid=""
-        
+
+        # First group: 8 hex digits
         for i in {1..8}; do
-            uuid="${uuid}${hex_chars:$((RANDOM % 16)):1}"
+            local rand_val=$((RANDOM % 16))
+            uuid="${uuid}${hex_chars:${rand_val}:1}"
         done
         uuid="${uuid}-"
-        
+
+        # Second group: 4 hex digits
         for i in {1..4}; do
-            uuid="${uuid}${hex_chars:$((RANDOM % 16)):1}"
-        done
-        uuid="${uuid}-4"  # Version 4
-        
-        for i in {1..3}; do
-            uuid="${uuid}${hex_chars:$((RANDOM % 16)):1}"
+            local rand_val=$((RANDOM % 16))
+            uuid="${uuid}${hex_chars:${rand_val}:1}"
         done
         uuid="${uuid}-"
-        
-        # Variant bits (10xx)
-        uuid="${uuid}${hex_chars:$((8 + RANDOM % 4)):1}"
+
+        # Third group: 4xxx (version 4)
+        uuid="${uuid}4"  # Version 4 identifier
         for i in {1..3}; do
-            uuid="${uuid}${hex_chars:$((RANDOM % 16)):1}"
+            local rand_val=$((RANDOM % 16))
+            uuid="${uuid}${hex_chars:${rand_val}:1}"
         done
         uuid="${uuid}-"
-        
+
+        # Fourth group: yxxx (variant bits)
+        # First digit must be 8, 9, a, or b (binary 10xx)
+        local variant_chars="89ab"
+        local variant_idx=$((RANDOM % 4))
+        uuid="${uuid}${variant_chars:${variant_idx}:1}"
+        for i in {1..3}; do
+            local rand_val=$((RANDOM % 16))
+            uuid="${uuid}${hex_chars:${rand_val}:1}"
+        done
+        uuid="${uuid}-"
+
+        # Fifth group: 12 hex digits
         for i in {1..12}; do
-            uuid="${uuid}${hex_chars:$((RANDOM % 16)):1}"
+            local rand_val=$((RANDOM % 16))
+            uuid="${uuid}${hex_chars:${rand_val}:1}"
         done
     fi
-    
-    # Validate generated UUID
+
+    # Validate generated UUID structure and format
     if [[ "${uuid}" =~ ${UUID_PATTERN} ]]; then
-        echo "${uuid}"
+        # Additional validation for UUID v4 specific requirements
+        local version_char="${uuid:14:1}"
+        local variant_char="${uuid:19:1}"
+
+        if [[ "${version_char}" == "4" ]] && [[ "${variant_char}" =~ [89ab] ]]; then
+            # Check for low-entropy patterns
+            if [[ "${uuid}" == "00000000-0000-4000-8000-000000000000" ]] || \
+               [[ "${uuid}" =~ ^(.)\1*-\1*-4\1*-[89ab]\1*-\1*$ ]]; then
+                log_warn "Generated UUID has low entropy, regenerating..."
+                # Recursive call with different seed (limited to prevent infinite recursion)
+                if [[ "${FUNCNAME[1]}" != "${FUNCNAME[0]}" ]]; then
+                    sleep 0.001  # Brief delay to change timestamp
+                    generate_uuid_v4
+                    return $?
+                fi
+            fi
+
+            log_debug "UUID v4 generated successfully using ${generation_method}"
+            echo "${uuid}"
+            return 0
+        else
+            log_error "Generated UUID does not meet v4 requirements (version: ${version_char}, variant: ${variant_char})"
+            return 1
+        fi
     else
-        log_error "Failed to generate valid UUID"
+        log_error "Failed to generate valid UUID format"
         return 1
     fi
 }

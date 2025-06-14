@@ -571,15 +571,27 @@ function Install-Chocolatey {
     }
 }
 
-# Enhanced VS Code path discovery for production environment
+# Enhanced VS Code path discovery for real environment detection
 function Get-VSCodePaths {
-    Write-LogInfo "Discovering VS Code installations (comprehensive scan)..."
+    Write-LogInfo "Discovering VS Code installations (real environment detection)..."
 
     $paths = @{}
+
+    # Get current user information for real environment detection
+    $currentUser = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
+    $currentUserName = $env:USERNAME
+    $currentUserProfile = $env:USERPROFILE
     $appData = $env:APPDATA
     $localAppData = $env:LOCALAPPDATA
     $programFiles = $env:ProgramFiles
     $programFilesX86 = ${env:ProgramFiles(x86)}
+
+    Write-LogInfo "Real environment detection:"
+    Write-LogInfo "  Current user: $currentUser"
+    Write-LogInfo "  Username: $currentUserName"
+    Write-LogInfo "  Profile: $currentUserProfile"
+    Write-LogInfo "  AppData: $appData"
+    Write-LogInfo "  LocalAppData: $localAppData"
 
     # 1. Registry-based discovery (most reliable)
     Write-LogInfo "Scanning registry for VS Code installations..."
@@ -616,7 +628,7 @@ function Get-VSCodePaths {
         Write-LogWarning "Registry discovery failed: $($_.Exception.Message)"
     }
 
-    # 2. Standard user data paths
+    # 2. Standard user data paths (with deduplication)
     Write-LogInfo "Scanning standard user data paths..."
     $standardPaths = @(
         @{ Path = "$appData\Code"; Type = "Stable" },
@@ -630,8 +642,22 @@ function Get-VSCodePaths {
 
     foreach ($pathInfo in $standardPaths) {
         if (Test-Path $pathInfo.Path) {
-            $paths[$pathInfo.Type] = $pathInfo.Path
-            Write-LogInfo "Found VS Code installation: $($pathInfo.Type) -> $($pathInfo.Path)"
+            # Check if this path is already discovered (prevent duplicates)
+            $normalizedPath = $pathInfo.Path.ToLower()
+            $isDuplicate = $false
+
+            foreach ($existingPath in $paths.Values) {
+                if ($existingPath.ToLower() -eq $normalizedPath) {
+                    $isDuplicate = $true
+                    Write-LogInfo "Skipping duplicate path: $($pathInfo.Path) (already found as $existingPath)"
+                    break
+                }
+            }
+
+            if (-not $isDuplicate) {
+                $paths[$pathInfo.Type] = $pathInfo.Path
+                Write-LogInfo "Found VS Code installation: $($pathInfo.Type) -> $($pathInfo.Path)"
+            }
         }
     }
 
@@ -1239,6 +1265,30 @@ function Modify-StorageFile {
                 }
             }
 
+            # Special handling for Augment-specific files
+            $fileName = [System.IO.Path]::GetFileName($FilePath)
+            if ($fileName -match "augment|context7") {
+                # Clear Augment-specific authentication data
+                $augmentKeys = @('authToken', 'accessToken', 'refreshToken', 'sessionToken', 'userToken', 'apiKey')
+                foreach ($augmentKey in $augmentKeys) {
+                    if ($content.PSObject.Properties.Name -contains $augmentKey) {
+                        $content.$augmentKey = $null
+                        $modifiedIdentifiers += $augmentKey
+                        Write-LogInfo "Cleared Augment auth key: $augmentKey"
+                    }
+                }
+
+                # Clear user identification data
+                $userKeys = @('userId', 'username', 'email', 'accountId', 'profileId')
+                foreach ($userKey in $userKeys) {
+                    if ($content.PSObject.Properties.Name -contains $userKey) {
+                        $content.$userKey = $null
+                        $modifiedIdentifiers += $userKey
+                        Write-LogInfo "Cleared user identification: $userKey"
+                    }
+                }
+            }
+
             # Save modified JSON
             $content | ConvertTo-Json -Depth 10 -Compress | Set-Content $FilePath -Encoding UTF8
 
@@ -1284,104 +1334,408 @@ function Modify-StorageFile {
     }
 }
 
-# Main execution function
+# Account logout and cleanup function with infinite loop prevention
+function Invoke-AccountLogoutCleanup {
+    param([hashtable]$VSCodePaths, [bool]$DryRun)
+
+    Write-LogInfo "Executing comprehensive account logout and cleanup..."
+
+    $result = @{
+        Success = $true
+        AugmentTokensCleared = 0
+        AugmentFilesDeleted = 0
+        AuthenticationCleared = $false
+        SessionsCleared = 0
+        Errors = @()
+        Details = ""
+    }
+
+    # Enhanced loop prevention and progress tracking
+    $processedItems = @{}
+    $maxIterations = 500  # Reduced for safety
+    $currentIteration = 0
+    $progressTracker = @{
+        TotalItemsFound = 0
+        ItemsProcessed = 0
+        LastProgressTime = Get-Date
+        StallDetectionThreshold = 30  # seconds
+    }
+
+    try {
+        # Enhanced Augment file patterns for real environment cleanup
+        $augmentPatterns = @(
+            "User\globalStorage\augment.*",
+            "User\globalStorage\*augment*",
+            "User\globalStorage\augment.vscode-augment*",
+            "User\globalStorage\*augment.vscode-augment*",
+            "User\workspaceStorage\*\augment.*",
+            "User\workspaceStorage\*\Augment.*",
+            "User\workspaceStorage\*\*augment*",
+            "User\workspaceStorage\*\*Augment*",
+            "User\globalStorage\context7.*",
+            "User\globalStorage\*context7*",
+            "User\workspaceStorage\*\context7.*",
+            "User\globalStorage\vscode-augment*",
+            "User\globalStorage\*vscode-augment*"
+        )
+
+        Write-LogInfo "Using enhanced Augment detection patterns:"
+        foreach ($pattern in $augmentPatterns) {
+            Write-LogInfo "  Pattern: $pattern"
+        }
+
+        # First pass: Collect all items to process (prevents infinite loop)
+        $allItemsToProcess = @()
+
+        foreach ($basePath in $VSCodePaths.Values) {
+            Write-LogInfo "Scanning Augment data in: $basePath"
+
+            foreach ($pattern in $augmentPatterns) {
+                $fullPath = Join-Path $basePath $pattern
+                try {
+                    $items = Get-ChildItem -Path $fullPath -Recurse -ErrorAction SilentlyContinue
+
+                    foreach ($item in $items) {
+                        $itemKey = $item.FullName.ToLower()
+                        if (-not $processedItems.ContainsKey($itemKey)) {
+                            $allItemsToProcess += $item
+                            $processedItems[$itemKey] = $true
+                        }
+                    }
+                } catch {
+                    Write-LogWarning "Failed to scan pattern $pattern in $basePath`: $($_.Exception.Message)"
+                }
+            }
+        }
+
+        Write-LogInfo "Found $($allItemsToProcess.Count) unique items to process"
+
+        # Second pass: Process collected items safely
+        foreach ($item in $allItemsToProcess) {
+            $currentIteration++
+
+            # Safety check to prevent infinite loops
+            if ($currentIteration -gt $maxIterations) {
+                Write-LogWarning "Maximum iteration limit reached ($maxIterations). Stopping to prevent infinite loop."
+                $result.Errors += "Maximum iteration limit reached"
+                break
+            }
+
+            # Verify item still exists (may have been deleted as part of parent directory)
+            if (-not (Test-Path $item.FullName)) {
+                Write-LogInfo "Item already deleted: $($item.FullName)"
+                continue
+            }
+
+            if (-not $DryRun) {
+                try {
+                    if ($item.PSIsContainer) {
+                        Remove-Item $item.FullName -Force -Recurse -ErrorAction Stop
+                        Write-LogInfo "Deleted Augment directory: $($item.FullName)"
+                    } else {
+                        Remove-Item $item.FullName -Force -ErrorAction Stop
+                        Write-LogInfo "Deleted Augment file: $($item.FullName)"
+                    }
+                    $result.AugmentFilesDeleted++
+                } catch {
+                    Write-LogWarning "Failed to delete: $($item.FullName) - $($_.Exception.Message)"
+                    $result.Errors += "Failed to delete: $($item.FullName)"
+                }
+            } else {
+                Write-LogInfo "DRY RUN: Would delete $($item.FullName)"
+                $result.AugmentFilesDeleted++
+            }
+        }
+
+        # Clear authentication tokens specifically (separate process)
+        Write-LogInfo "Processing authentication tokens..."
+        $authTokensProcessed = 0
+
+        foreach ($basePath in $VSCodePaths.Values) {
+            $authPaths = @(
+                "User\globalStorage\vscode.authentication",
+                "User\globalStorage\ms-vscode.vscode-account"
+            )
+
+            foreach ($authPath in $authPaths) {
+                $fullAuthPath = Join-Path $basePath $authPath
+                if (Test-Path $fullAuthPath) {
+                    try {
+                        $authFiles = Get-ChildItem -Path $fullAuthPath -Recurse -ErrorAction SilentlyContinue |
+                                   Where-Object { $_.Name -match "augment|context7" }
+
+                        foreach ($authFile in $authFiles) {
+                            $authTokensProcessed++
+
+                            # Safety check for auth tokens too
+                            if ($authTokensProcessed -gt 100) {
+                                Write-LogWarning "Maximum auth token limit reached (100). Stopping to prevent issues."
+                                break
+                            }
+
+                            if (-not $DryRun) {
+                                try {
+                                    Remove-Item $authFile.FullName -Force -ErrorAction Stop
+                                    Write-LogInfo "Cleared authentication token: $($authFile.FullName)"
+                                    $result.AugmentTokensCleared++
+                                } catch {
+                                    Write-LogWarning "Failed to clear auth token: $($authFile.FullName) - $($_.Exception.Message)"
+                                    $result.Errors += "Failed to clear auth token: $($authFile.FullName)"
+                                }
+                            } else {
+                                Write-LogInfo "DRY RUN: Would clear auth token $($authFile.FullName)"
+                                $result.AugmentTokensCleared++
+                            }
+                        }
+                    } catch {
+                        Write-LogWarning "Failed to process auth path $fullAuthPath`: $($_.Exception.Message)"
+                    }
+                }
+            }
+        }
+
+        $result.AuthenticationCleared = $true
+        $result.Details = "Cleared $($result.AugmentTokensCleared) tokens and deleted $($result.AugmentFilesDeleted) files"
+        Write-LogSuccess "Account logout cleanup completed: $($result.Details)"
+
+    } catch {
+        $result.Success = $false
+        $result.Errors += $_.Exception.Message
+        $result.Details = "Account logout cleanup failed: $($_.Exception.Message)"
+        Write-LogError $result.Details
+    }
+
+    Write-LogInfo "Cleanup completed after $currentIteration iterations"
+    return $result
+}
+
+# Main execution function with enhanced error handling and timeout
 function Invoke-AugmentVIP {
     param([string]$Operation, [bool]$DryRun)
-    
+
     Write-LogInfo "Starting Augment VIP operation: $Operation"
-    
-    # Platform validation
-    if (-not (Test-WindowsPlatform)) {
-        Write-LogError "Platform validation failed"
-        return 1
-    }
-    
-    # Dependency check with automatic installation
-    $depCheck = Test-Dependencies
-    if ($depCheck -is [array]) {
-        # Missing dependencies found - auto install
-        Write-LogInfo "Auto-installing missing dependencies: $($depCheck -join ', ')"
-        if (-not (Install-Dependencies $depCheck)) {
-            Write-LogError "Dependency installation failed"
+
+    # Set operation timeout (30 minutes for safety)
+    $operationTimeout = 1800
+    $operationStartTime = Get-Date
+
+    try {
+        # Platform validation
+        Write-LogInfo "Validating Windows platform..."
+        if (-not (Test-WindowsPlatform)) {
+            Write-LogError "Platform validation failed"
             return 1
         }
 
-        # Verify installation
-        Write-LogInfo "Verifying dependency installation..."
-        $verifyCheck = Test-Dependencies
-        if ($verifyCheck -is [array]) {
-            Write-LogError "Some dependencies still missing after installation: $($verifyCheck -join ', ')"
-            return 1
-        } elseif ($verifyCheck -eq $false) {
-            Write-LogError "Dependency verification failed"
+        # Check operation timeout
+        if (((Get-Date) - $operationStartTime).TotalSeconds -gt $operationTimeout) {
+            Write-LogError "Operation timeout exceeded during platform validation"
             return 1
         }
-    } elseif ($depCheck -eq $false) {
-        Write-LogError "Dependency check failed"
-        return 1
-    }
-    
-    # Discover VS Code installations
-    $vscodePaths = Get-VSCodePaths
-    if ($vscodePaths.Count -eq 0) {
-        Write-LogError "No VS Code installations found"
-        return 1
-    }
-    
-    # Execute operation
-    switch ($Operation.ToLower()) {
-        "clean" {
-            $dbFiles = Get-DatabaseFiles $vscodePaths
-            if ($dbFiles.Count -eq 0) {
-                Write-LogWarning "No database files found"
-                return 0
-            }
-            $result = Invoke-DatabaseCleaning $dbFiles $DryRun
-            Write-LogInfo "Database cleaning result: $($result | ConvertTo-Json)"
-        }
-        "modify-ids" {
-            $storageFiles = Get-StorageFiles $vscodePaths
-            if ($storageFiles.Count -eq 0) {
-                Write-LogWarning "No storage files found"
-                return 0
-            }
-            $result = Invoke-TelemetryModification $storageFiles $DryRun
-            Write-LogInfo "Telemetry modification result: $($result | ConvertTo-Json)"
-        }
-        "migrate" {
-            # Execute complete 6-step migration workflow
-            $result = Invoke-CompleteMigrationWorkflow $vscodePaths $DryRun
-            Write-LogInfo "Complete migration workflow result: $($result | ConvertTo-Json)"
-        }
-        "all" {
-            # Clean databases
-            $dbFiles = Get-DatabaseFiles $vscodePaths
-            if ($dbFiles.Count -gt 0) {
-                $cleanResult = Invoke-DatabaseCleaning $dbFiles $DryRun
-                Write-LogInfo "Database cleaning result: $($cleanResult | ConvertTo-Json)"
+
+        # Dependency check with automatic installation
+        Write-LogInfo "Checking system dependencies..."
+        $depCheck = Test-Dependencies
+        if ($depCheck -is [array]) {
+            # Missing dependencies found - auto install
+            Write-LogInfo "Auto-installing missing dependencies: $($depCheck -join ', ')"
+            if (-not (Install-Dependencies $depCheck)) {
+                Write-LogError "Dependency installation failed"
+                return 1
             }
 
-            # Modify telemetry IDs
-            $storageFiles = Get-StorageFiles $vscodePaths
-            if ($storageFiles.Count -gt 0) {
-                $modifyResult = Invoke-TelemetryModification $storageFiles $DryRun
-                Write-LogInfo "Telemetry modification result: $($modifyResult | ConvertTo-Json)"
+            # Verify installation
+            Write-LogInfo "Verifying dependency installation..."
+            $verifyCheck = Test-Dependencies
+            if ($verifyCheck -is [array]) {
+                Write-LogError "Some dependencies still missing after installation: $($verifyCheck -join ', ')"
+                return 1
+            } elseif ($verifyCheck -eq $false) {
+                Write-LogError "Dependency verification failed"
+                return 1
             }
-        }
-        "help" {
-            Show-Help
-            return 0
-        }
-        default {
-            Write-LogError "Unknown operation: $Operation"
-            Show-Help
+        } elseif ($depCheck -eq $false) {
+            Write-LogError "Dependency check failed"
             return 1
         }
+
+        # Check operation timeout
+        if (((Get-Date) - $operationStartTime).TotalSeconds -gt $operationTimeout) {
+            Write-LogError "Operation timeout exceeded during dependency check"
+            return 1
+        }
+
+        # Process detection and handling (Windows platform specific)
+        Write-LogInfo "Performing VS Code process detection..."
+        try {
+            # Try to load process manager if available
+            $processManagerPath = Join-Path $PSScriptRoot "..\core\ProcessManager.ps1"
+            if (Test-Path $processManagerPath) {
+                . $processManagerPath
+
+                # Load process configuration
+                if (-not (Load-ProcessConfig)) {
+                    Write-LogWarning "Process configuration loading failed, using default behavior"
+                }
+
+                # Perform process detection and handling
+                $processResult = Invoke-ProcessDetectionAndHandling -AutoClose $false -Interactive $true
+                if (-not $processResult) {
+                    Write-LogError "Process detection was cancelled by user"
+                    return 1
+                }
+
+                Write-LogSuccess "Process detection completed successfully"
+            } else {
+                Write-LogWarning "Process management module not found, skipping process detection"
+            }
+        } catch {
+            Write-LogWarning "Process detection failed: $($_.Exception.Message)"
+            Write-LogWarning "Continuing with execution (may encounter file lock issues)"
+        }
+
+        # Check operation timeout after process detection
+        if (((Get-Date) - $operationStartTime).TotalSeconds -gt $operationTimeout) {
+            Write-LogError "Operation timeout exceeded during process detection"
+            return 1
+        }
+
+        # Discover VS Code installations
+        Write-LogInfo "Discovering VS Code installations..."
+        $vscodePaths = Get-VSCodePaths
+        if ($vscodePaths.Count -eq 0) {
+            Write-LogError "No VS Code installations found"
+            return 1
+        }
+
+        # Check operation timeout
+        if (((Get-Date) - $operationStartTime).TotalSeconds -gt $operationTimeout) {
+            Write-LogError "Operation timeout exceeded during VS Code discovery"
+            return 1
+        }
+
+    } catch {
+        Write-LogError "Critical error during initialization: $($_.Exception.Message)"
+        Write-LogError "Stack trace: $($_.ScriptStackTrace)"
+        return 1
     }
-    
-    Write-LogSuccess "Augment VIP operation completed successfully"
-    Write-AuditLog "OPERATION_COMPLETE" "Operation: $Operation, DryRun: $DryRun"
-    return 0
+
+    # Execute operation with timeout monitoring
+    try {
+        Write-LogInfo "Executing operation: $($Operation.ToLower())"
+
+        switch ($Operation.ToLower()) {
+            "clean" {
+                Write-LogInfo "Starting database cleaning operation..."
+                $dbFiles = Get-DatabaseFiles $vscodePaths
+                if ($dbFiles.Count -eq 0) {
+                    Write-LogWarning "No database files found"
+                    return 0
+                }
+
+                # Check timeout before operation
+                if (((Get-Date) - $operationStartTime).TotalSeconds -gt $operationTimeout) {
+                    Write-LogError "Operation timeout exceeded before database cleaning"
+                    return 1
+                }
+
+                $result = Invoke-DatabaseCleaning $dbFiles $DryRun
+                Write-LogInfo "Database cleaning result: $($result | ConvertTo-Json)"
+            }
+            "modify-ids" {
+                Write-LogInfo "Starting telemetry modification operation..."
+                $storageFiles = Get-StorageFiles $vscodePaths
+                if ($storageFiles.Count -eq 0) {
+                    Write-LogWarning "No storage files found"
+                    return 0
+                }
+
+                # Check timeout before operation
+                if (((Get-Date) - $operationStartTime).TotalSeconds -gt $operationTimeout) {
+                    Write-LogError "Operation timeout exceeded before telemetry modification"
+                    return 1
+                }
+
+                $result = Invoke-TelemetryModification $storageFiles $DryRun
+                Write-LogInfo "Telemetry modification result: $($result | ConvertTo-Json)"
+            }
+            "migrate" {
+                Write-LogInfo "Starting complete migration workflow..."
+
+                # Check timeout before operation
+                if (((Get-Date) - $operationStartTime).TotalSeconds -gt $operationTimeout) {
+                    Write-LogError "Operation timeout exceeded before migration workflow"
+                    return 1
+                }
+
+                # Execute complete 6-step migration workflow
+                $result = Invoke-CompleteMigrationWorkflow $vscodePaths $DryRun
+                Write-LogInfo "Complete migration workflow result: $($result | ConvertTo-Json)"
+            }
+            "all" {
+                Write-LogInfo "Starting comprehensive cleanup operation..."
+
+                # Clean databases
+                $dbFiles = Get-DatabaseFiles $vscodePaths
+                if ($dbFiles.Count -gt 0) {
+                    # Check timeout before database cleaning
+                    if (((Get-Date) - $operationStartTime).TotalSeconds -gt $operationTimeout) {
+                        Write-LogError "Operation timeout exceeded before database cleaning"
+                        return 1
+                    }
+
+                    Write-LogInfo "Phase 1/3: Database cleaning..."
+                    $cleanResult = Invoke-DatabaseCleaning $dbFiles $DryRun
+                    Write-LogInfo "Database cleaning result: $($cleanResult | ConvertTo-Json)"
+                }
+
+                # Modify telemetry IDs
+                $storageFiles = Get-StorageFiles $vscodePaths
+                if ($storageFiles.Count -gt 0) {
+                    # Check timeout before telemetry modification
+                    if (((Get-Date) - $operationStartTime).TotalSeconds -gt $operationTimeout) {
+                        Write-LogError "Operation timeout exceeded before telemetry modification"
+                        return 1
+                    }
+
+                    Write-LogInfo "Phase 2/3: Telemetry modification..."
+                    $modifyResult = Invoke-TelemetryModification $storageFiles $DryRun
+                    Write-LogInfo "Telemetry modification result: $($modifyResult | ConvertTo-Json)"
+                }
+
+                # Execute account logout and cleanup
+                # Check timeout before account cleanup
+                if (((Get-Date) - $operationStartTime).TotalSeconds -gt $operationTimeout) {
+                    Write-LogError "Operation timeout exceeded before account cleanup"
+                    return 1
+                }
+
+                Write-LogInfo "Phase 3/3: Account logout and cleanup..."
+                $accountResult = Invoke-AccountLogoutCleanup $vscodePaths $DryRun
+                Write-LogInfo "Account logout result: $($accountResult | ConvertTo-Json)"
+            }
+            "help" {
+                Show-Help
+                return 0
+            }
+            default {
+                Write-LogError "Unknown operation: $Operation"
+                Show-Help
+                return 1
+            }
+        }
+
+        $operationDuration = ((Get-Date) - $operationStartTime).TotalSeconds
+        Write-LogSuccess "Augment VIP operation completed successfully in $([math]::Round($operationDuration, 2)) seconds"
+        Write-AuditLog "OPERATION_COMPLETE" "Operation: $Operation, DryRun: $DryRun, Duration: $operationDuration seconds"
+        return 0
+
+    } catch {
+        Write-LogError "Critical error during operation execution: $($_.Exception.Message)"
+        Write-LogError "Stack trace: $($_.ScriptStackTrace)"
+        Write-AuditLog "OPERATION_ERROR" "Operation: $Operation, Error: $($_.Exception.Message)"
+        return 1
+    }
 }
 
 # Complete 6-step migration workflow

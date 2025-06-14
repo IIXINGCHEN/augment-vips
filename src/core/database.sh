@@ -24,6 +24,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/common.sh"
 source "$(dirname "${BASH_SOURCE[0]}")/security.sh"
 source "$(dirname "${BASH_SOURCE[0]}")/validation.sh"
 source "$(dirname "${BASH_SOURCE[0]}")/backup.sh"
+source "$(dirname "${BASH_SOURCE[0]}")/config_loader.sh"
 
 # Database operation constants
 if [[ -z "${DB_TIMEOUT:-}" ]]; then
@@ -36,27 +37,8 @@ if [[ -z "${BACKUP_BEFORE_CLEAN:-}" ]]; then
     readonly BACKUP_BEFORE_CLEAN=true
 fi
 
-# Augment-related patterns to clean
-if [[ -z "${AUGMENT_PATTERNS:-}" ]]; then
-    readonly AUGMENT_PATTERNS=(
-        "%augment%"
-        "%telemetry%"
-        "%machineId%"
-        "%deviceId%"
-        "%sqmId%"
-        "%uuid%"
-        "%session%"
-        "%lastSessionDate%"
-        "%lastSyncDate%"
-        "%lastSyncMachineId%"
-        "%lastSyncDeviceId%"
-        "%lastSyncSqmId%"
-        "%lastSyncUuid%"
-        "%lastSyncSession%"
-        "%lastSyncLastSessionDate%"
-        "%lastSyncLastSyncDate%"
-    )
-fi
+# Augment-related patterns loaded from unified configuration
+# Note: AUGMENT_PATTERNS will be loaded by config_loader.sh
 
 # Global database operation statistics
 declare -A DB_STATS=()
@@ -64,26 +46,40 @@ declare -A DB_STATS=()
 # Initialize database module
 init_database() {
     log_info "Initializing database operations module..."
-    
+
+    # Load unified configuration
+    if ! load_augment_config; then
+        log_error "Failed to load unified configuration"
+        return 1
+    fi
+
+    # Validate that patterns were loaded
+    if [[ ${#AUGMENT_PATTERNS[@]} -eq 0 ]]; then
+        log_error "No Augment patterns loaded from configuration"
+        return 1
+    fi
+
+    log_info "Loaded ${#AUGMENT_PATTERNS[@]} cleaning patterns from unified configuration"
+
     # Check SQLite availability
     if ! is_command_available sqlite3; then
         log_error "SQLite3 is required but not available"
         return 1
     fi
-    
+
     # Verify SQLite functionality
     if ! verify_sqlite_functionality; then
         log_error "SQLite functionality verification failed"
         return 1
     fi
-    
+
     # Initialize statistics
     DB_STATS["databases_processed"]=0
     DB_STATS["entries_removed"]=0
     DB_STATS["errors_encountered"]=0
     DB_STATS["backups_created"]=0
-    
-    audit_log "DATABASE_INIT" "Database operations module initialized"
+
+    audit_log "DATABASE_INIT" "Database operations module initialized with ${#AUGMENT_PATTERNS[@]} patterns"
     log_success "Database operations module initialized"
 }
 
@@ -146,25 +142,46 @@ clean_vscode_database() {
         ((DB_STATS["backups_created"]++))
     fi
     
-    # Perform database cleaning
+    # Perform database cleaning with enhanced error handling
     local start_time=$(date +%s.%3N)
     local entries_removed=0
-    
+
     if [[ "${dry_run}" == "true" ]]; then
         entries_removed=$(count_augment_entries "${db_file}")
         log_info "DRY RUN: Would remove ${entries_removed} entries from ${db_file}"
     else
-        entries_removed=$(remove_augment_entries "${db_file}")
-        if [[ $? -eq 0 ]]; then
-            log_success "Removed ${entries_removed} entries from ${db_file}"
-            ((DB_STATS["databases_processed"]++))
-            ((DB_STATS["entries_removed"] += entries_removed))
-        else
-            log_error "Failed to clean database: ${db_file}"
+        # Attempt database cleaning with retry mechanism
+        local max_retries=3
+        local retry_count=0
+        local cleaning_success=false
+
+        while [[ ${retry_count} -lt ${max_retries} && "${cleaning_success}" == "false" ]]; do
+            if [[ ${retry_count} -gt 0 ]]; then
+                log_info "Retry attempt ${retry_count}/${max_retries} for database cleaning"
+                sleep $((retry_count * 2))  # Progressive delay
+            fi
+
+            entries_removed=$(remove_augment_entries "${db_file}")
+            local remove_exit_code=$?
+
+            if [[ ${remove_exit_code} -eq 0 && ${entries_removed} -ge 0 ]]; then
+                log_success "Removed ${entries_removed} entries from ${db_file}"
+                ((DB_STATS["databases_processed"]++))
+                ((DB_STATS["entries_removed"] += entries_removed))
+                cleaning_success=true
+            else
+                log_warn "Database cleaning attempt ${retry_count} failed"
+                ((retry_count++))
+            fi
+        done
+
+        if [[ "${cleaning_success}" == "false" ]]; then
+            log_error "Failed to clean database after ${max_retries} attempts: ${db_file}"
             ((DB_STATS["errors_encountered"]++))
-            
+
             # Restore from backup if cleaning failed
             if [[ -n "${backup_file}" && -f "${backup_file}" ]]; then
+                log_info "Restoring database from backup due to cleaning failure"
                 restore_database_backup "${backup_file}" "${db_file}"
             fi
             return 1
@@ -267,38 +284,155 @@ count_augment_entries() {
     echo "${total_count}"
 }
 
-# Remove Augment-related entries
+# Database lock management
+acquire_database_lock() {
+    local db_file="$1"
+    local lock_file="${db_file}.lock"
+    local timeout="${2:-30}"
+    local wait_time=0
+
+    log_debug "Acquiring database lock: ${lock_file}"
+
+    while [[ ${wait_time} -lt ${timeout} ]]; do
+        if (set -C; echo $$ > "${lock_file}") 2>/dev/null; then
+            log_debug "Database lock acquired successfully"
+            echo "${lock_file}"
+            return 0
+        fi
+
+        # Check if lock is stale (process no longer exists)
+        if [[ -f "${lock_file}" ]]; then
+            local lock_pid
+            lock_pid=$(cat "${lock_file}" 2>/dev/null)
+            if [[ -n "${lock_pid}" ]] && ! kill -0 "${lock_pid}" 2>/dev/null; then
+                log_warn "Removing stale lock file: ${lock_file}"
+                rm -f "${lock_file}"
+                continue
+            fi
+        fi
+
+        log_debug "Waiting for database lock... (${wait_time}/${timeout}s)"
+        sleep 1
+        ((wait_time++))
+    done
+
+    log_error "Failed to acquire database lock within ${timeout} seconds"
+    return 1
+}
+
+# Release database lock
+release_database_lock() {
+    local lock_file="$1"
+
+    if [[ -f "${lock_file}" ]]; then
+        rm -f "${lock_file}"
+        log_debug "Database lock released: ${lock_file}"
+        audit_log "DATABASE_LOCK_RELEASE" "Lock released: ${lock_file}"
+    fi
+}
+
+# Enhanced remove Augment-related entries with proper transaction management
 remove_augment_entries() {
     local db_file="$1"
     local total_removed=0
-    
+    local lock_file=""
+
     log_debug "Removing Augment entries from: ${db_file}"
-    
-    # Start transaction for atomic operation
-    local sql_commands="BEGIN TRANSACTION;"
-    
-    # Add DELETE statements for each pattern
+
+    # Acquire database lock to prevent concurrent access
+    lock_file=$(acquire_database_lock "${db_file}" 30)
+    if [[ $? -ne 0 ]]; then
+        log_error "Failed to acquire database lock for: ${db_file}"
+        return 1
+    fi
+
+    # Ensure lock is released on exit
+    trap "release_database_lock '${lock_file}'" EXIT
+
+    # Count entries before deletion for accurate reporting
+    local entries_before
+    entries_before=$(count_augment_entries "${db_file}")
+    log_debug "Entries before deletion: ${entries_before}"
+
+    if [[ ${entries_before} -eq 0 ]]; then
+        log_info "No Augment entries found to remove"
+        release_database_lock "${lock_file}"
+        echo "0"
+        return 0
+    fi
+
+    # Generate SQL using configuration-driven approach
+    local delete_sql="BEGIN ${SQL_TRANSACTION_MODE} TRANSACTION;"
+
+    # Build WHERE clause based on configuration
+    local where_conditions=()
     for pattern in "${AUGMENT_PATTERNS[@]}"; do
-        sql_commands="${sql_commands} DELETE FROM ItemTable WHERE key LIKE '${pattern}';"
+        if [[ -n "${pattern}" ]]; then
+            if [[ "${SQL_USE_LOWER_FUNCTION}" == "true" && "${SQL_CASE_SENSITIVE}" == "false" ]]; then
+                where_conditions+=("LOWER(key) LIKE LOWER('${pattern}')")
+            else
+                where_conditions+=("key LIKE '${pattern}'")
+            fi
+        fi
     done
-    
-    # Add VACUUM to reclaim space
-    sql_commands="${sql_commands} VACUUM; COMMIT;"
-    
-    # Execute all commands in a single transaction
-    if sqlite3 -cmd ".timeout ${DB_TIMEOUT}" "${db_file}" "${sql_commands}" 2>/dev/null; then
-        # Count total removed entries (approximate)
-        total_removed=$(count_augment_entries "${db_file}")
-        
-        # Since we removed entries, the count should be 0 now
-        # Calculate removed entries from before/after comparison would be more accurate
-        # For now, we'll use a simple approach
-        
-        log_debug "Database cleaning completed successfully"
+
+    # Combine conditions with OR
+    local where_clause
+    where_clause=$(IFS=' OR '; echo "${where_conditions[*]}")
+
+    delete_sql="${delete_sql} DELETE FROM ItemTable WHERE ${where_clause}; COMMIT;"
+
+    # Execute deletion with detailed error handling
+    local delete_result
+    delete_result=$(sqlite3 -cmd ".timeout ${DB_TIMEOUT}" "${db_file}" "${delete_sql}" 2>&1)
+    local delete_exit_code=$?
+
+    if [[ ${delete_exit_code} -eq 0 ]]; then
+        # Verify deletion success
+        local entries_after
+        entries_after=$(count_augment_entries "${db_file}")
+        total_removed=$((entries_before - entries_after))
+
+        log_success "Successfully deleted ${total_removed} entries from ${db_file}"
+
+        # Execute VACUUM separately to reclaim space (non-critical)
+        log_debug "Executing VACUUM to reclaim space..."
+        local vacuum_result
+        vacuum_result=$(sqlite3 -cmd ".timeout ${DB_TIMEOUT}" "${db_file}" "VACUUM;" 2>&1)
+        if [[ $? -eq 0 ]]; then
+            log_debug "VACUUM completed successfully"
+        else
+            log_warn "VACUUM failed but deletion was successful: ${vacuum_result}"
+        fi
+
+        release_database_lock "${lock_file}"
         echo "${total_removed}"
         return 0
     else
-        log_error "Database cleaning failed"
+        log_error "Database deletion failed: ${delete_result}"
+
+        # Attempt retry for certain error types
+        if [[ "${delete_result}" == *"database is locked"* ]]; then
+            log_info "Retrying deletion after lock timeout..."
+            sleep 2
+
+            # Retry once
+            delete_result=$(sqlite3 -cmd ".timeout $((DB_TIMEOUT * 2))" "${db_file}" "${delete_sql}" 2>&1)
+            delete_exit_code=$?
+
+            if [[ ${delete_exit_code} -eq 0 ]]; then
+                local entries_after
+                entries_after=$(count_augment_entries "${db_file}")
+                total_removed=$((entries_before - entries_after))
+                log_success "Retry successful: deleted ${total_removed} entries"
+                release_database_lock "${lock_file}"
+                echo "${total_removed}"
+                return 0
+            fi
+        fi
+
+        log_error "All deletion attempts failed for: ${db_file}"
+        release_database_lock "${lock_file}"
         echo "0"
         return 1
     fi
@@ -527,23 +661,23 @@ begin_migration_transaction() {
     local db_file="$1"
     local transaction_id="${2:-migration_$(date +%s%3N)}"
 
-    log_debug "开始迁移事务: ${transaction_id}"
+    log_debug "Starting migration transaction: ${transaction_id}"
 
     # Validate database file
     if ! validate_database_file "${db_file}"; then
-        log_error "数据库验证失败，无法开始事务"
+        log_error "Database validation failed, cannot start transaction"
         return 1
     fi
 
     # Begin transaction
     if sqlite3 "${db_file}" "BEGIN IMMEDIATE TRANSACTION;" 2>/dev/null; then
         TRANSACTION_STATE["${transaction_id}"]="active:${db_file}"
-        audit_log "TRANSACTION_BEGIN" "迁移事务开始: ${transaction_id} on ${db_file}"
-        log_debug "迁移事务开始成功: ${transaction_id}"
+        audit_log "TRANSACTION_BEGIN" "Migration transaction started: ${transaction_id} on ${db_file}"
+        log_debug "Migration transaction started successfully: ${transaction_id}"
         echo "${transaction_id}"
         return 0
     else
-        log_error "开始迁移事务失败: ${transaction_id}"
+        log_error "Failed to start migration transaction: ${transaction_id}"
         return 1
     fi
 }
@@ -553,12 +687,12 @@ create_transaction_savepoint() {
     local transaction_id="$1"
     local savepoint_name="${2:-sp_$(date +%s%3N)}"
 
-    log_debug "创建事务保存点: ${savepoint_name}"
+    log_debug "Creating transaction savepoint: ${savepoint_name}"
 
     # Get database file from transaction state
     local db_info="${TRANSACTION_STATE["${transaction_id}"]}"
     if [[ -z "${db_info}" ]]; then
-        log_error "事务不存在: ${transaction_id}"
+        log_error "Transaction does not exist: ${transaction_id}"
         return 1
     fi
 
@@ -567,11 +701,11 @@ create_transaction_savepoint() {
     # Create savepoint
     if sqlite3 "${db_file}" "SAVEPOINT ${savepoint_name};" 2>/dev/null; then
         TRANSACTION_STATE["${transaction_id}:${savepoint_name}"]="savepoint:${db_file}"
-        log_debug "保存点创建成功: ${savepoint_name}"
+        log_debug "Savepoint created successfully: ${savepoint_name}"
         echo "${savepoint_name}"
         return 0
     else
-        log_error "保存点创建失败: ${savepoint_name}"
+        log_error "Failed to create savepoint: ${savepoint_name}"
         return 1
     fi
 }
@@ -581,13 +715,13 @@ rollback_to_savepoint() {
     local transaction_id="$1"
     local savepoint_name="$2"
 
-    log_info "回滚到保存点: ${savepoint_name}"
+    log_info "Rolling back to savepoint: ${savepoint_name}"
 
     # Get database file from transaction state
     local savepoint_key="${transaction_id}:${savepoint_name}"
     local db_info="${TRANSACTION_STATE["${savepoint_key}"]}"
     if [[ -z "${db_info}" ]]; then
-        log_error "保存点不存在: ${savepoint_name}"
+        log_error "Savepoint does not exist: ${savepoint_name}"
         return 1
     fi
 
@@ -595,11 +729,11 @@ rollback_to_savepoint() {
 
     # Rollback to savepoint
     if sqlite3 "${db_file}" "ROLLBACK TO SAVEPOINT ${savepoint_name};" 2>/dev/null; then
-        audit_log "TRANSACTION_ROLLBACK" "回滚到保存点: ${savepoint_name} in ${transaction_id}"
-        log_success "回滚到保存点成功: ${savepoint_name}"
+        audit_log "TRANSACTION_ROLLBACK" "Rolled back to savepoint: ${savepoint_name} in ${transaction_id}"
+        log_success "Successfully rolled back to savepoint: ${savepoint_name}"
         return 0
     else
-        log_error "回滚到保存点失败: ${savepoint_name}"
+        log_error "Failed to rollback to savepoint: ${savepoint_name}"
         return 1
     fi
 }
@@ -608,12 +742,12 @@ rollback_to_savepoint() {
 commit_migration_transaction() {
     local transaction_id="$1"
 
-    log_info "提交迁移事务: ${transaction_id}"
+    log_info "Committing migration transaction: ${transaction_id}"
 
     # Get database file from transaction state
     local db_info="${TRANSACTION_STATE["${transaction_id}"]}"
     if [[ -z "${db_info}" ]]; then
-        log_error "事务不存在: ${transaction_id}"
+        log_error "Transaction does not exist: ${transaction_id}"
         return 1
     fi
 
@@ -628,11 +762,11 @@ commit_migration_transaction() {
             fi
         done
 
-        audit_log "TRANSACTION_COMMIT" "迁移事务提交: ${transaction_id} on ${db_file}"
-        log_success "迁移事务提交成功: ${transaction_id}"
+        audit_log "TRANSACTION_COMMIT" "Migration transaction committed: ${transaction_id} on ${db_file}"
+        log_success "Migration transaction committed successfully: ${transaction_id}"
         return 0
     else
-        log_error "迁移事务提交失败: ${transaction_id}"
+        log_error "Failed to commit migration transaction: ${transaction_id}"
         return 1
     fi
 }
@@ -641,12 +775,12 @@ commit_migration_transaction() {
 rollback_migration_transaction() {
     local transaction_id="$1"
 
-    log_info "回滚迁移事务: ${transaction_id}"
+    log_info "Rolling back migration transaction: ${transaction_id}"
 
     # Get database file from transaction state
     local db_info="${TRANSACTION_STATE["${transaction_id}"]}"
     if [[ -z "${db_info}" ]]; then
-        log_error "事务不存在: ${transaction_id}"
+        log_error "Transaction does not exist: ${transaction_id}"
         return 1
     fi
 
@@ -661,11 +795,11 @@ rollback_migration_transaction() {
             fi
         done
 
-        audit_log "TRANSACTION_ROLLBACK" "迁移事务回滚: ${transaction_id} on ${db_file}"
-        log_success "迁移事务回滚成功: ${transaction_id}"
+        audit_log "TRANSACTION_ROLLBACK" "Migration transaction rolled back: ${transaction_id} on ${db_file}"
+        log_success "Migration transaction rolled back successfully: ${transaction_id}"
         return 0
     else
-        log_error "迁移事务回滚失败: ${transaction_id}"
+        log_error "Failed to rollback migration transaction: ${transaction_id}"
         return 1
     fi
 }
@@ -676,12 +810,12 @@ execute_transaction_sql() {
     local sql_command="$2"
     local error_action="${3:-rollback}"  # rollback, continue, savepoint
 
-    log_debug "在事务中执行SQL: ${transaction_id}"
+    log_debug "Executing SQL in transaction: ${transaction_id}"
 
     # Get database file from transaction state
     local db_info="${TRANSACTION_STATE["${transaction_id}"]}"
     if [[ -z "${db_info}" ]]; then
-        log_error "事务不存在: ${transaction_id}"
+        log_error "Transaction does not exist: ${transaction_id}"
         return 1
     fi
 
@@ -693,11 +827,11 @@ execute_transaction_sql() {
     local sql_exit_code=$?
 
     if [[ ${sql_exit_code} -eq 0 ]]; then
-        log_debug "SQL执行成功"
+        log_debug "SQL executed successfully"
         echo "${sql_result}"
         return 0
     else
-        log_error "SQL执行失败: ${sql_result}"
+        log_error "SQL execution failed: ${sql_result}"
 
         # Handle error based on action
         case "${error_action}" in
@@ -709,7 +843,7 @@ execute_transaction_sql() {
                 create_transaction_savepoint "${transaction_id}" "${savepoint_name}"
                 ;;
             "continue")
-                log_warn "忽略SQL错误，继续执行"
+                log_warn "Ignoring SQL error, continuing execution"
                 ;;
         esac
 
@@ -726,11 +860,11 @@ check_transaction_status() {
         local status="${db_info%%:*}"
         local db_file="${db_info#*:}"
 
-        log_info "事务状态: ${transaction_id} - ${status} on ${db_file}"
+        log_info "Transaction status: ${transaction_id} - ${status} on ${db_file}"
         echo "${status}"
         return 0
     else
-        log_info "事务不存在: ${transaction_id}"
+        log_info "Transaction does not exist: ${transaction_id}"
         echo "not_found"
         return 1
     fi
@@ -738,7 +872,7 @@ check_transaction_status() {
 
 # List active transactions
 list_active_transactions() {
-    log_info "活动事务列表:"
+    log_info "Active transactions:"
 
     local transaction_count=0
     for key in "${!TRANSACTION_STATE[@]}"; do
@@ -753,7 +887,7 @@ list_active_transactions() {
     done
 
     if [[ ${transaction_count} -eq 0 ]]; then
-        log_info "  没有活动事务"
+        log_info "  No active transactions"
     fi
 
     return 0
@@ -761,7 +895,7 @@ list_active_transactions() {
 
 # Cleanup orphaned transactions
 cleanup_orphaned_transactions() {
-    log_info "清理孤立事务"
+    log_info "Cleaning orphaned transactions"
 
     local cleaned_count=0
     for key in "${!TRANSACTION_STATE[@]}"; do
@@ -771,7 +905,7 @@ cleanup_orphaned_transactions() {
 
             # Check if database file still exists and is accessible
             if [[ ! -f "${db_file}" ]] || ! validate_database_file "${db_file}"; then
-                log_warn "清理孤立事务: ${key}"
+                log_warn "Cleaning orphaned transaction: ${key}"
 
                 # Remove transaction and its savepoints
                 for cleanup_key in "${!TRANSACTION_STATE[@]}"; do
@@ -785,7 +919,8 @@ cleanup_orphaned_transactions() {
         fi
     done
 
-    log_info "清理了 ${cleaned_count} 个孤立事务"
+    log_info "Cleaned ${cleaned_count} orphaned transactions"
+    
     return 0
 }
 

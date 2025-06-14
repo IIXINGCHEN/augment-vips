@@ -1,0 +1,93 @@
+{
+  "version": "2.0.0",
+  "description": "进程检测和管理配置",
+  "process_detection": {
+    "enabled": true,
+    "auto_detect": true,
+    "force_close_on_conflict": false,
+    "detection_timeout": 30,
+    "close_timeout": 15,
+    "force_close_timeout": 5
+  },
+  "supported_processes": {
+    "vscode_stable": {
+      "process_names": ["Code.exe", "code"],
+      "window_titles": ["Visual Studio Code"],
+      "display_name": "Visual Studio Code",
+      "priority": 1,
+      "close_method": "graceful_first"
+    },
+    "vscode_insiders": {
+      "process_names": ["Code - Insiders.exe", "code-insiders"],
+      "window_titles": ["Visual Studio Code - Insiders"],
+      "display_name": "Visual Studio Code Insiders",
+      "priority": 2,
+      "close_method": "graceful_first"
+    },
+    "cursor": {
+      "process_names": ["Cursor.exe", "cursor"],
+      "window_titles": ["Cursor"],
+      "display_name": "Cursor",
+      "priority": 3,
+      "close_method": "graceful_first"
+    },
+    "codium": {
+      "process_names": ["VSCodium.exe", "codium"],
+      "window_titles": ["VSCodium"],
+      "display_name": "VSCodium",
+      "priority": 4,
+      "close_method": "graceful_first"
+    },
+    "code_oss": {
+      "process_names": ["code-oss.exe", "code-oss"],
+      "window_titles": ["Code - OSS"],
+      "display_name": "Code - OSS",
+      "priority": 5,
+      "close_method": "graceful_first"
+    }
+  },
+  "close_methods": {
+    "graceful_first": {
+      "description": "先尝试优雅关闭，失败后强制结束",
+      "steps": [
+        {
+          "method": "close_main_window",
+          "timeout": 10,
+          "description": "关闭主窗口"
+        },
+        {
+          "method": "terminate_process",
+          "timeout": 5,
+          "description": "终止进程"
+        },
+        {
+          "method": "kill_process",
+          "timeout": 3,
+          "description": "强制结束进程"
+        }
+      ]
+    },
+    "force_only": {
+      "description": "直接强制结束",
+      "steps": [
+        {
+          "method": "kill_process",
+          "timeout": 3,
+          "description": "强制结束进程"
+        }
+      ]
+    }
+  },
+  "user_interaction": {
+    "prompt_before_close": true,
+    "show_process_details": true,
+    "allow_skip": true,
+    "default_action": "prompt"
+  },
+  "logging": {
+    "log_detection": true,
+    "log_close_attempts": true,
+    "log_errors": true,
+    "detailed_logging": false
+  }
+}

@@ -98,21 +98,36 @@ detect_platform() {
         platform="${FORCE_PLATFORM}"
         echo "INFO: Platform forced to: ${platform}" >&2
     else
-        case "$(uname -s)" in
-            Linux*)
-                platform="linux"
-                ;;
-            Darwin*)
-                platform="macos"
-                ;;
-            CYGWIN*|MINGW*|MSYS*)
-                platform="windows"
-                ;;
-            *)
-                echo "ERROR: Unsupported platform: $(uname -s)" >&2
-                return 1
-                ;;
-        esac
+        # Check if we're running in Windows PowerShell environment
+        if command -v powershell.exe >/dev/null 2>&1 && [[ -n "${WINDIR:-}" ]]; then
+            platform="windows"
+            echo "INFO: Detected Windows PowerShell environment" >&2
+        else
+            case "$(uname -s 2>/dev/null || echo 'Unknown')" in
+                Linux*)
+                    platform="linux"
+                    ;;
+                Darwin*)
+                    platform="macos"
+                    ;;
+                CYGWIN*|MINGW*|MSYS*)
+                    platform="windows"
+                    ;;
+                *)
+                    # If uname fails, try to detect Windows environment
+                    if [[ -n "${WINDIR:-}" ]] || [[ -n "${SYSTEMROOT:-}" ]]; then
+                        platform="windows"
+                        echo "INFO: Detected Windows environment (fallback detection)" >&2
+                    else
+                        echo "ERROR: Unsupported platform: $(uname -s 2>/dev/null || echo 'Unknown')" >&2
+                        echo "ERROR: Consider using platform-specific entry points:" >&2
+                        echo "ERROR:   Windows: install.cmd or install.bat" >&2
+                        echo "ERROR:   Linux/macOS: ./install" >&2
+                        return 1
+                    fi
+                    ;;
+            esac
+        fi
 
         echo "INFO: Detected platform: ${platform}" >&2
     fi
@@ -133,7 +148,30 @@ validate_platform_implementation() {
 
     case "${platform}" in
         "windows")
-            implementation_file="${platforms_dir}/windows.ps1"
+            # Check multiple possible locations for Windows implementation
+            local possible_files=(
+                "${SCRIPT_DIR}/install.ps1"
+                "${platforms_dir}/windows.ps1"
+                "${SCRIPT_DIR}/src/platforms/windows.ps1"
+            )
+
+            for file in "${possible_files[@]}"; do
+                if [[ -f "${file}" ]]; then
+                    implementation_file="${file}"
+                    break
+                fi
+            done
+
+            if [[ -z "${implementation_file}" ]]; then
+                echo "ERROR: Windows PowerShell implementation not found" >&2
+                echo "ERROR: Searched locations:" >&2
+                for file in "${possible_files[@]}"; do
+                    echo "ERROR:   ${file}" >&2
+                done
+                echo "ERROR: Consider using Windows-specific entry points:" >&2
+                echo "ERROR:   install.cmd or install.bat" >&2
+                return 1
+            fi
             ;;
         "linux")
             implementation_file="${platforms_dir}/linux.sh"
@@ -268,11 +306,30 @@ execute_platform_implementation() {
     # Build command arguments
     local args=()
     
+    # Convert cross-platform parameters to platform-specific format
+    local converted_operation
+    case "${operation}" in
+        "--help"|"-h")
+            converted_operation="help"
+            ;;
+        "--version")
+            converted_operation="help"  # Version info is included in help
+            ;;
+        "clean"|"modify-ids"|"all"|"migrate"|"help")
+            converted_operation="${operation}"
+            ;;
+        *)
+            # Default to help for unknown operations
+            log_warning "Unknown operation '${operation}', converting to 'help'"
+            converted_operation="help"
+            ;;
+    esac
+
     case "${platform}" in
         "windows")
             # PowerShell execution
             args+=("powershell.exe" "-ExecutionPolicy" "Bypass" "-File" "${implementation_file}")
-            args+=("-Operation" "${operation}")
+            args+=("-Operation" "${converted_operation}")
             if [[ "${dry_run}" == "true" ]]; then
                 args+=("-DryRun")
             fi
@@ -283,7 +340,7 @@ execute_platform_implementation() {
         "linux"|"macos")
             # Bash execution
             args+=("${implementation_file}")
-            args+=("--operation" "${operation}")
+            args+=("--operation" "${converted_operation}")
             if [[ "${dry_run}" == "true" ]]; then
                 args+=("--dry-run")
             fi
