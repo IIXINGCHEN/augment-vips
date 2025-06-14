@@ -2109,22 +2109,23 @@ function Invoke-EmbeddedTelemetryModification {
                                 Write-LogDebug "Used unified configuration for telemetry ID modification"
                             } catch {
                                 Write-LogWarning "Failed to use unified config for telemetry, falling back: $($_.Exception.Message)"
-                                # Fallback to embedded approach
-                                $content."telemetry.machineId" = -join ((1..64) | ForEach-Object { '{0:x}' -f (Get-Random -Maximum 16) })
-                                $content."telemetry.devDeviceId" = [System.Guid]::NewGuid().ToString()
-                                $content."telemetry.sqmId" = [System.Guid]::NewGuid().ToString()
+                                # Fallback to embedded approach using Add-Member for safety
+                                $content | Add-Member -MemberType NoteProperty -Name "telemetry.machineId" -Value (-join ((1..64) | ForEach-Object { '{0:x}' -f (Get-Random -Maximum 16) })) -Force
+                                $content | Add-Member -MemberType NoteProperty -Name "telemetry.devDeviceId" -Value ([System.Guid]::NewGuid().ToString()) -Force
+                                $content | Add-Member -MemberType NoteProperty -Name "telemetry.sqmId" -Value ([System.Guid]::NewGuid().ToString()) -Force
                             }
                         } else {
                             # Enhanced fallback approach with time stamp fields
-                            $content."telemetry.machineId" = -join ((1..64) | ForEach-Object { '{0:x}' -f (Get-Random -Maximum 16) })
-                            $content."telemetry.devDeviceId" = [System.Guid]::NewGuid().ToString()
-                            $content."telemetry.sqmId" = [System.Guid]::NewGuid().ToString()
+                            # Use Add-Member to safely add properties that may not exist
+                            $content | Add-Member -MemberType NoteProperty -Name "telemetry.machineId" -Value (-join ((1..64) | ForEach-Object { '{0:x}' -f (Get-Random -Maximum 16) })) -Force
+                            $content | Add-Member -MemberType NoteProperty -Name "telemetry.devDeviceId" -Value ([System.Guid]::NewGuid().ToString()) -Force
+                            $content | Add-Member -MemberType NoteProperty -Name "telemetry.sqmId" -Value ([System.Guid]::NewGuid().ToString()) -Force
 
                             # Reset session timestamps to break trial tracking
                             $currentTime = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
-                            $content."telemetry.firstSessionDate" = $currentTime
-                            $content."telemetry.lastSessionDate" = $currentTime
-                            $content."telemetry.currentSessionDate" = $currentTime
+                            $content | Add-Member -MemberType NoteProperty -Name "telemetry.firstSessionDate" -Value $currentTime -Force
+                            $content | Add-Member -MemberType NoteProperty -Name "telemetry.lastSessionDate" -Value $currentTime -Force
+                            $content | Add-Member -MemberType NoteProperty -Name "telemetry.currentSessionDate" -Value $currentTime -Force
                         }
 
                         $content | ConvertTo-Json -Depth 10 | Set-Content $fullPath
