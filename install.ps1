@@ -5,20 +5,61 @@
 # Production-ready with comprehensive error handling and security
 #
 # Usage: .\install.ps1 [options]
-#   Options:
-#     -Operation <operation>  Specify operation (clean, modify-ids, all, help)
-#     -DryRun                Perform dry run without making changes
-#     -Verbose               Enable verbose output
-#     -AutoInstallDeps       Automatically install missing dependencies
-#     -Help                  Show this help message
+#   Primary Options:
+#     -Operation <operation>  Specify operation (clean, modify-ids, all, help) [Aliases: -Op, -Action]
+#     -Mode <mode>           Cleanup mode (minimal, conservative, standard, aggressive, adaptive, forensic) [Aliases: -M, -CleanupMode]
+#     -DryRun                Perform dry run without making changes [Aliases: -Preview, -WhatIf]
+#     -VerboseOutput         Enable verbose output and debug logging [Aliases: -V, -VerboseMode]
+#
+#   Advanced Options:
+#     -AutoInstallDeps       Auto-install missing dependencies via Chocolatey [Aliases: -AutoDeps, -InstallDeps]
+#     -Interactive           Enable interactive mode for prompts (default: true) [Alias: -I]
+#     -Help                  Show detailed help and usage examples [Aliases: -H, -?]
 
 param(
+    [Parameter(
+        Position = 0,
+        HelpMessage = "Operation to perform: clean (database cleanup), modify-ids (telemetry modification), all (both operations), help (show usage)"
+    )]
+    [ValidateSet("", "clean", "modify-ids", "all", "help")]
+    [Alias("Op", "Action")]
     [string]$Operation = "",
+
+    [Parameter(
+        HelpMessage = "Cleanup mode: minimal (60% effect), conservative (75%), standard (90%), aggressive (98%), adaptive (92% intelligent), forensic (99% thorough)"
+    )]
+    [ValidateSet("minimal", "conservative", "standard", "aggressive", "adaptive", "forensic")]
+    [Alias("M", "CleanupMode")]
     [string]$Mode = "adaptive",
+
+    [Parameter(
+        HelpMessage = "Perform a dry run without making any actual changes (preview mode)"
+    )]
+    [Alias("Preview", "WhatIf")]
     [switch]$DryRun = $false,
-    [switch]$Verbose = $false,
+
+    [Parameter(
+        HelpMessage = "Enable verbose output with detailed logging and debug information"
+    )]
+    [Alias("V", "VerboseMode")]
+    [switch]$VerboseOutput = $false,
+
+    [Parameter(
+        HelpMessage = "Automatically install missing dependencies (SQLite3, curl, jq) via Chocolatey"
+    )]
+    [Alias("AutoDeps", "InstallDeps")]
     [switch]$AutoInstallDeps = $false,
+
+    [Parameter(
+        HelpMessage = "Enable interactive mode for user prompts and confirmations"
+    )]
+    [Alias("I")]
     [switch]$Interactive = $true,
+
+    [Parameter(
+        HelpMessage = "Show detailed help information and usage examples"
+    )]
+    [Alias("H", "?")]
     [switch]$Help = $false
 )
 
@@ -30,6 +71,34 @@ if ($Operation -eq "--help" -or $Operation -eq "-h") {
 if ($Operation -eq "--version") {
     $Operation = "help"
     $Help = $true
+}
+
+# Enhanced parameter validation and user-friendly error messages
+if ($Help) {
+    # Help was requested, skip other validations
+} elseif (-not [string]::IsNullOrEmpty($Operation)) {
+    # Validate operation parameter
+    $validOperations = @("clean", "modify-ids", "all", "help")
+    if ($Operation -notin $validOperations) {
+        Write-Host "Invalid operation: '$Operation'" -ForegroundColor Red
+        Write-Host "Valid operations: $($validOperations -join ', ')" -ForegroundColor Yellow
+        Write-Host "Use -Help or -? for detailed usage information" -ForegroundColor Cyan
+        exit 1
+    }
+}
+
+# Validate mode parameter
+$validModes = @("minimal", "conservative", "standard", "aggressive", "adaptive", "forensic")
+if ($Mode -notin $validModes) {
+    Write-Host "Invalid cleanup mode: '$Mode'" -ForegroundColor Red
+    Write-Host "Valid modes: $($validModes -join ', ')" -ForegroundColor Yellow
+    Write-Host "Use -Help for mode descriptions and risk assessments" -ForegroundColor Cyan
+    exit 1
+}
+
+# Validate parameter combinations
+if ($DryRun -and (-not $Interactive)) {
+    Write-Host "Note: DryRun mode with non-interactive execution - results will be logged only" -ForegroundColor Yellow
 }
 
 # Script metadata
@@ -50,18 +119,130 @@ try {
         } else {
             # For remote execution, use current directory as fallback
             $script:PROJECT_ROOT = Get-Location
-            Write-Host "⚠ Remote execution detected - using current directory as PROJECT_ROOT" -ForegroundColor Yellow
+            Write-Host "⚠️ Remote execution detected - using current directory as PROJECT_ROOT" -ForegroundColor Yellow
         }
     }
 } catch {
     # Final fallback for any errors
     $script:PROJECT_ROOT = Get-Location
-    Write-Host "⚠ Could not determine script path - using current directory as PROJECT_ROOT" -ForegroundColor Yellow
+    Write-Host "Could not determine script path - using current directory as PROJECT_ROOT" -ForegroundColor Yellow
 }
 
 # Set error handling and execution policy
 $ErrorActionPreference = "Stop"
-$VerbosePreference = if ($Verbose) { "Continue" } else { "SilentlyContinue" }
+$VerbosePreference = if ($VerboseOutput) { "Continue" } else { "SilentlyContinue" }
+
+# Remote execution detection function (must be defined early)
+function Test-RemoteExecution {
+    # Check if we're running from a remote source (piped execution)
+    $isRemote = $false
+
+    try {
+        # Try multiple methods to get script path
+        $scriptPath = $MyInvocation.MyCommand.Path
+        if ([string]::IsNullOrEmpty($scriptPath)) {
+            $scriptPath = $PSCommandPath
+        }
+        if ([string]::IsNullOrEmpty($scriptPath)) {
+            $scriptPath = $MyInvocation.MyCommand.Definition
+        }
+
+        # Use Write-Host for early logging since Write-LogDebug may not be available yet
+        if ($VerboseOutput) {
+            Write-Host "[DEBUG] Script path: $scriptPath" -ForegroundColor Gray
+        }
+
+        if ([string]::IsNullOrEmpty($scriptPath)) {
+            # No script path usually means piped execution
+            if ($VerboseOutput) {
+                Write-Host "[DEBUG] No script path - checking current directory for project structure" -ForegroundColor Gray
+            }
+
+            # Check if we're in a project directory
+            $currentDir = Get-Location
+            $platformsDir = Join-Path $currentDir.Path "platforms"
+            $coreDir = Join-Path $currentDir.Path "core"
+
+            if ((Test-Path $platformsDir) -or (Test-Path $coreDir)) {
+                if ($VerboseOutput) {
+                    Write-Host "[DEBUG] Project structure found in current directory - local execution" -ForegroundColor Gray
+                }
+                $isRemote = $false
+            } else {
+                if ($VerboseOutput) {
+                    Write-Host "[DEBUG] No project structure in current directory - likely piped execution" -ForegroundColor Gray
+                }
+                $isRemote = $true
+            }
+        } elseif ($scriptPath -match "^http" -or $scriptPath -match "TemporaryFile") {
+            if ($VerboseOutput) {
+                Write-Host "[DEBUG] Script path indicates remote source" -ForegroundColor Gray
+            }
+            $isRemote = $true
+        } elseif ($scriptPath -match "Temp\\.*\.ps1$") {
+            # Script is in temp directory with .ps1 extension (likely downloaded)
+            if ($VerboseOutput) {
+                Write-Host "[DEBUG] Script in temp directory" -ForegroundColor Gray
+            }
+            $isRemote = $true
+        } else {
+            # Check if platforms directory exists relative to script
+            $scriptDir = Split-Path -Parent $scriptPath
+            $platformsDir = Join-Path $scriptDir "platforms"
+            if ($VerboseOutput) {
+                Write-Host "[DEBUG] Checking platforms directory: $platformsDir" -ForegroundColor Gray
+            }
+
+            if (Test-Path $platformsDir) {
+                if ($VerboseOutput) {
+                    Write-Host "[DEBUG] Platforms directory found - local execution" -ForegroundColor Gray
+                }
+                $isRemote = $false
+            } else {
+                if ($VerboseOutput) {
+                    Write-Host "[DEBUG] Platforms directory not found" -ForegroundColor Gray
+                }
+                # This might be remote execution if platforms directory doesn't exist
+                # But only if we're also not in a development environment
+                $gitDir = Join-Path $scriptDir ".git"
+                $coreDir = Join-Path $scriptDir "core"
+                if ($VerboseOutput) {
+                    Write-Host "[DEBUG] Checking git dir: $gitDir, core dir: $coreDir" -ForegroundColor Gray
+                }
+
+                if (-not (Test-Path $gitDir) -and -not (Test-Path $coreDir)) {
+                    if ($VerboseOutput) {
+                        Write-Host "[DEBUG] Neither git nor core directory found - assuming remote" -ForegroundColor Gray
+                    }
+                    $isRemote = $true
+                } else {
+                    if ($VerboseOutput) {
+                        Write-Host "[DEBUG] Development environment detected - local execution" -ForegroundColor Gray
+                    }
+                    $isRemote = $false
+                }
+            }
+        }
+    } catch {
+        # If we can't determine, assume local for safety
+        if ($VerboseOutput) {
+            Write-Host "[DEBUG] Exception in remote detection: $($_.Exception.Message)" -ForegroundColor Gray
+        }
+        $isRemote = $false
+    }
+
+    if ($VerboseOutput) {
+        Write-Host "[DEBUG] Remote execution detected: $isRemote" -ForegroundColor Gray
+    }
+    return $isRemote
+}
+
+# Load unified logging bootstrap first (required by ConfigLoader)
+$loggingBootstrapPath = Join-Path $script:PROJECT_ROOT "src\core\logging\logging_bootstrap.ps1"
+if (Test-Path $loggingBootstrapPath) {
+    . $loggingBootstrapPath
+    Ensure-LoggingAvailable -ScriptName "Installer"
+}
 
 # Load unified configuration (with fallback for remote execution)
 $script:UseUnifiedConfig = $false
@@ -71,11 +252,13 @@ try {
     # Skip configuration loading for remote execution
     if (Test-RemoteExecution) {
         $script:ConfigLoadError = "Remote execution mode - using embedded configuration"
-        Write-Host "⚠ Remote execution detected - using embedded configuration patterns" -ForegroundColor Yellow
+        Write-Host "Remote execution detected - using embedded configuration patterns" -ForegroundColor Yellow
     } else {
-        $configLoaderPath = Join-Path $PROJECT_ROOT "src\core\ConfigLoader.ps1"
+        $configLoaderPath = Join-Path $PROJECT_ROOT "src\core\ConfigurationManager.ps1"
         if (Test-Path $configLoaderPath) {
             . $configLoaderPath
+            # Initialize configuration paths with project root
+            Initialize-ConfigPaths $PROJECT_ROOT
             if (Load-AugmentConfig) {
                 $script:UseUnifiedConfig = $true
                 Write-Host "✓ Unified configuration loaded successfully" -ForegroundColor Green
@@ -91,7 +274,7 @@ try {
 }
 
 if (-not $script:UseUnifiedConfig) {
-    Write-Host "⚠ Using embedded configuration patterns (Reason: $ConfigLoadError)" -ForegroundColor Yellow
+    Write-Host "Using embedded configuration patterns (Reason: $ConfigLoadError)" -ForegroundColor Yellow
 }
 
 # Load process management module (handle remote execution)
@@ -99,109 +282,61 @@ $script:ProcessManagerLoaded = $false
 try {
     # Check if we're in remote execution mode
     if (Test-RemoteExecution) {
-        Write-Host "⚠ Remote execution detected - process management module not available" -ForegroundColor Yellow
-        Write-Host "  Process detection will be skipped in remote execution mode" -ForegroundColor Gray
+        Write-Host "Remote execution detected - process management module not available" -ForegroundColor Yellow
+        Write-Host "Process detection will be skipped in remote execution mode" -ForegroundColor Gray
     } else {
-        $processManagerPath = Join-Path $PROJECT_ROOT "src\core\ProcessManager.ps1"
+        $processManagerPath = Join-Path $PROJECT_ROOT "src\core\process\ProcessManager.ps1"
         if (Test-Path $processManagerPath) {
             . $processManagerPath
             $script:ProcessManagerLoaded = $true
-            Write-Host "✓ Process management module loaded successfully" -ForegroundColor Green
+            Write-Host "✅ Process management module loaded successfully" -ForegroundColor Green
         } else {
-            Write-Host "⚠ Process management module not found" -ForegroundColor Yellow
+            Write-Host "Process management module not found" -ForegroundColor Yellow
         }
     }
 } catch {
-    Write-Host "⚠ Failed to load process management module: $($_.Exception.Message)" -ForegroundColor Yellow
+    Write-Host "Failed to load process management module: $($_.Exception.Message)" -ForegroundColor Yellow
 }
 
-# Enhanced logging functions with timestamps and audit trail
-function Write-LogInfo {
-    param([string]$Message)
-    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-    Write-Host "[$timestamp] [INFO] $Message" -ForegroundColor Cyan
-    if ($script:LogFile) {
-        Add-Content -Path $script:LogFile -Value "[$timestamp] [INFO] $Message" -ErrorAction SilentlyContinue
+# Load unified logging module (with fallback for remote execution)
+$script:UnifiedLoggerLoaded = $false
+try {
+    if (-not (Test-RemoteExecution)) {
+        $unifiedLoggerPath = Join-Path $PROJECT_ROOT "src\core\AugmentLogger.ps1"
+        if (Test-Path $unifiedLoggerPath) {
+            . $unifiedLoggerPath
+            $script:UnifiedLoggerLoaded = $true
+            Write-Host "✅ Unified logging module loaded successfully" -ForegroundColor Green
+        } else {
+            Write-Host "Unified logging module not found, using fallback" -ForegroundColor Yellow
+        }
+    } else {
+        Write-Host "Remote execution detected - using fallback logging" -ForegroundColor Yellow
     }
+} catch {
+    Write-Host "Failed to load unified logging module: $($_.Exception.Message)" -ForegroundColor Yellow
 }
 
-function Write-LogDebug {
-    param([string]$Message)
-    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-    # Only show debug messages if Verbose is enabled
-    if ($Verbose) {
-        Write-Host "[$timestamp] [DEBUG] $Message" -ForegroundColor Gray
-    }
-    if ($script:LogFile) {
-        Add-Content -Path $script:LogFile -Value "[$timestamp] [DEBUG] $Message" -ErrorAction SilentlyContinue
-    }
-}
-
-function Write-LogSuccess {
-    param([string]$Message)
-    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-    Write-Host "[$timestamp] [SUCCESS] $Message" -ForegroundColor Green
-    if ($script:LogFile) {
-        Add-Content -Path $script:LogFile -Value "[$timestamp] [SUCCESS] $Message" -ErrorAction SilentlyContinue
-    }
-}
-
-function Write-LogWarning {
-    param([string]$Message)
-    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-    Write-Host "[$timestamp] [WARN] $Message" -ForegroundColor Yellow
-    if ($script:LogFile) {
-        Add-Content -Path $script:LogFile -Value "[$timestamp] [WARN] $Message" -ErrorAction SilentlyContinue
-    }
-}
-
-function Write-LogError {
-    param([string]$Message)
-    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-    Write-Host "[$timestamp] [ERROR] $Message" -ForegroundColor Red
-    if ($script:LogFile) {
-        Add-Content -Path $script:LogFile -Value "[$timestamp] [ERROR] $Message" -ErrorAction SilentlyContinue
-    }
-    if ($script:AuditLogFile) {
-        Add-Content -Path $script:AuditLogFile -Value "[$timestamp] [ERROR] $Message" -ErrorAction SilentlyContinue
-    }
-}
-
+# Use unified logging functions from core module
+# Compatibility wrapper for audit logging to bridge old and new interfaces
 function Write-AuditLog {
     param([string]$Action, [string]$Details)
-    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-    $user = $env:USERNAME
-    $processId = $PID
-    $auditEntry = "[$timestamp] [PID:$processId] [USER:$user] [ACTION:$Action] $Details"
-    if ($script:AuditLogFile) {
-        Add-Content -Path $script:AuditLogFile -Value $auditEntry -ErrorAction SilentlyContinue
+
+    if ($script:UnifiedLoggerLoaded) {
+        # Use unified logger's Write-AugmentLog function directly to avoid recursion
+        Write-AugmentLog -Message "$Action - $Details" -Level "INFO" -Category "AUDIT"
+    } else {
+        # Fallback for when unified logger not available
+        Write-Host "[AUDIT] $Action - $Details" -ForegroundColor Magenta
     }
 }
+
+# Logging bootstrap already loaded above
 
 # Repository information (updated for new architecture)
 $REPO_URL = "https://gh.imixc.top/raw.githubusercontent.com/IIXINGCHEN/augment-vips/main"
 
-# Remote execution detection
-function Test-RemoteExecution {
-    # Check if script was executed via irm | iex or similar
-    $scriptPath = $MyInvocation.MyCommand.Path
-    if ([string]::IsNullOrEmpty($scriptPath)) {
-        return $true
-    }
-
-    # Check if we're running from a temporary location
-    if ($scriptPath -like "*\Temp\*" -or $scriptPath -like "*\tmp\*") {
-        return $true
-    }
-
-    # Check if PROJECT_ROOT doesn't contain expected structure
-    $srcDir = Join-Path $script:PROJECT_ROOT "src"
-    if (-not (Test-Path $srcDir)) {
-        return $true
-    }
-
-    return $false
-}
+# Remote execution detection function will be defined below
 
 # Platform validation functions
 function Test-WindowsPlatform {
@@ -279,13 +414,41 @@ function Initialize-Environment {
         New-Item -ItemType Directory -Path $logDir -Force | Out-Null
     }
 
-    # Set up log files
-    $timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
-    $script:LogFile = Join-Path $logDir "${SCRIPT_NAME}_${timestamp}.log"
-    $script:AuditLogFile = Join-Path $logDir "${SCRIPT_NAME}_audit_${timestamp}.log"
+    # Initialize unified logging system if available
+    if ($script:UnifiedLoggerLoaded) {
+        try {
+            $timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
+            $logFileName = "${SCRIPT_NAME}_${timestamp}.log"
+            $auditFileName = "${SCRIPT_NAME}_audit_${timestamp}.log"
+
+            # Initialize the unified logger
+            if (Initialize-AugmentLogger -LogDirectory $logDir -LogFileName $logFileName) {
+                Write-LogInfo "Unified logging system initialized successfully"
+                $script:LogFile = Join-Path $logDir $logFileName
+                $script:AuditLogFile = Join-Path $logDir $auditFileName
+            } else {
+                Write-Host "Failed to initialize unified logger, using fallback" -ForegroundColor Yellow
+                # Fallback to simple logging
+                $script:LogFile = Join-Path $logDir "${SCRIPT_NAME}_${timestamp}.log"
+                $script:AuditLogFile = Join-Path $logDir "${SCRIPT_NAME}_audit_${timestamp}.log"
+            }
+        } catch {
+            Write-Host "⚠️ Exception initializing unified logger: $($_.Exception.Message)" -ForegroundColor Yellow
+            # Fallback to simple logging
+            $timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
+            $script:LogFile = Join-Path $logDir "${SCRIPT_NAME}_${timestamp}.log"
+            $script:AuditLogFile = Join-Path $logDir "${SCRIPT_NAME}_audit_${timestamp}.log"
+        }
+    } else {
+        # Fallback logging setup
+        $timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
+        $script:LogFile = Join-Path $logDir "${SCRIPT_NAME}_${timestamp}.log"
+        $script:AuditLogFile = Join-Path $logDir "${SCRIPT_NAME}_audit_${timestamp}.log"
+    }
 
     Write-LogInfo "Augment VIP Windows Installer v${SCRIPT_VERSION} starting..."
     Write-LogInfo "Project root: $PROJECT_ROOT"
+    Write-LogInfo "Unified logger loaded: $script:UnifiedLoggerLoaded"
     Write-AuditLog "INSTALLER_START" "Windows installer started with operation: $Operation"
 
     # Check if we're in the correct project structure (more flexible for remote execution)
@@ -1002,12 +1165,12 @@ function Invoke-ComprehensiveCleaningEngine {
         $moduleLoadResult = Import-CoreModules
         if (-not $moduleLoadResult) {
             Write-LogError "Failed to load core modules, falling back to legacy implementation"
-            return Invoke-LegacyEmbeddedImplementation -Operation $Operation -DryRun $DryRun -Verbose $Verbose
+            return Invoke-LegacyEmbeddedImplementation -Operation $Operation -DryRun $DryRun -Verbose $VerboseOutput
         }
 
         # Phase 1: Intelligent Discovery
         Write-LogInfo "Phase 1: Intelligent data discovery..."
-        $discoveryResults = Start-AugmentDiscovery -Mode "comprehensive" -IncludeRegistry $true -IncludeTemp $true -Verbose $Verbose
+        $discoveryResults = Start-AugmentDiscovery -Mode "comprehensive" -IncludeRegistry $true -IncludeTemp $true -VerboseOutput $VerboseOutput
 
         if ($discoveryResults.Metadata.TotalItemsFound -eq 0) {
             Write-LogWarning "No Augment-related data found"
@@ -1520,12 +1683,28 @@ function Get-EmbeddedVSCodePaths {
     $appData = $env:APPDATA
     $localAppData = $env:LOCALAPPDATA
 
-    # Standard VS Code paths
+    # Enhanced VS Code paths including all variants
     $standardPaths = @(
+        # Standard VS Code
         "$appData\Code",
         "$localAppData\Code",
         "$appData\Code - Insiders",
-        "$localAppData\Code - Insiders"
+        "$localAppData\Code - Insiders",
+        "$appData\Code - Exploration",
+        "$localAppData\Code - Exploration",
+
+        # Cursor (VS Code fork)
+        "$appData\Cursor",
+        "$localAppData\Cursor",
+        "$localAppData\Programs\cursor",
+
+        # VSCodium (Open Source VS Code)
+        "$appData\VSCodium",
+        "$localAppData\VSCodium",
+
+        # Other VS Code variants
+        "$appData\Code - OSS",
+        "$localAppData\Code - OSS"
     )
 
     foreach ($path in $standardPaths) {
@@ -1559,7 +1738,7 @@ function Invoke-EmbeddedDatabaseCleaning {
             foreach ($file in $files) {
                 try {
                     if ($DryRun) {
-                        # Count entries that would be cleaned (using same comprehensive query)
+                        # Count entries that would be cleaned (using enhanced comprehensive query)
                         $countQuery = @"
 SELECT COUNT(*) FROM ItemTable WHERE
     /* Augment-related entries (case-insensitive) */
@@ -1577,8 +1756,21 @@ SELECT COUNT(*) FROM ItemTable WHERE
     key LIKE '%workbench.view.extension.augment%' OR
     key LIKE '%workbench.panel.augment%' OR
     key LIKE '%extensionHost.augment%' OR
+    key = 'Augment.vscode-augment' OR
+    key LIKE '%actionSystemStates%' OR
+    key LIKE '%workspaceMessageStates%' OR
+    key LIKE '%sidecar.agent.%' OR
+    key LIKE '%agentAutoModeApproved%' OR
+    key LIKE '%lastEnabledExtensionVersion%' OR
 
-    /* Telemetry and tracking entries */
+    /* CRITICAL: Encrypted session data - the key missing piece! */
+    key LIKE 'secret://%augment%' OR
+    key LIKE 'secret://%vscode-augment%' OR
+    key LIKE 'secret://%sessions%' OR
+    key LIKE '%augment.sessions%' OR
+    key LIKE '%extensionId%augment%' OR
+
+    /* Telemetry and tracking entries (enhanced) */
     LOWER(key) LIKE '%telemetry%' OR
     key LIKE '%machineId%' OR
     key LIKE '%deviceId%' OR
@@ -1592,6 +1784,12 @@ SELECT COUNT(*) FROM ItemTable WHERE
     key LIKE '%user-id%' OR
     key LIKE '%installationId%' OR
     key LIKE '%installation-id%' OR
+    key = 'telemetry.firstSessionDate' OR
+    key = 'telemetry.lastSessionDate' OR
+    key = 'telemetry.currentSessionDate' OR
+    key LIKE '%firstSessionDate%' OR
+    key LIKE '%lastSessionDate%' OR
+    key LIKE '%currentSessionDate%' OR
 
     /* Context7 and trial-related entries (comprehensive trial account cleanup) */
     LOWER(key) LIKE '%context7%' OR
@@ -1710,8 +1908,21 @@ DELETE FROM ItemTable WHERE
     key LIKE '%workbench.view.extension.augment%' OR
     key LIKE '%workbench.panel.augment%' OR
     key LIKE '%extensionHost.augment%' OR
+    key = 'Augment.vscode-augment' OR
+    key LIKE '%actionSystemStates%' OR
+    key LIKE '%workspaceMessageStates%' OR
+    key LIKE '%sidecar.agent.%' OR
+    key LIKE '%agentAutoModeApproved%' OR
+    key LIKE '%lastEnabledExtensionVersion%' OR
 
-    /* Telemetry and tracking entries */
+    /* CRITICAL: Encrypted session data - the key missing piece! */
+    key LIKE 'secret://%augment%' OR
+    key LIKE 'secret://%vscode-augment%' OR
+    key LIKE 'secret://%sessions%' OR
+    key LIKE '%augment.sessions%' OR
+    key LIKE '%extensionId%augment%' OR
+
+    /* Telemetry and tracking entries (enhanced) */
     LOWER(key) LIKE '%telemetry%' OR
     key LIKE '%machineId%' OR
     key LIKE '%deviceId%' OR
@@ -1725,6 +1936,12 @@ DELETE FROM ItemTable WHERE
     key LIKE '%user-id%' OR
     key LIKE '%installationId%' OR
     key LIKE '%installation-id%' OR
+    key = 'telemetry.firstSessionDate' OR
+    key = 'telemetry.lastSessionDate' OR
+    key = 'telemetry.currentSessionDate' OR
+    key LIKE '%firstSessionDate%' OR
+    key LIKE '%lastSessionDate%' OR
+    key LIKE '%currentSessionDate%' OR
 
     /* Context7 and trial-related entries (comprehensive trial account cleanup) */
     LOWER(key) LIKE '%context7%' OR
@@ -1898,10 +2115,16 @@ function Invoke-EmbeddedTelemetryModification {
                                 $content."telemetry.sqmId" = [System.Guid]::NewGuid().ToString()
                             }
                         } else {
-                            # Fallback to embedded approach
+                            # Enhanced fallback approach with time stamp fields
                             $content."telemetry.machineId" = -join ((1..64) | ForEach-Object { '{0:x}' -f (Get-Random -Maximum 16) })
                             $content."telemetry.devDeviceId" = [System.Guid]::NewGuid().ToString()
                             $content."telemetry.sqmId" = [System.Guid]::NewGuid().ToString()
+
+                            # Reset session timestamps to break trial tracking
+                            $currentTime = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
+                            $content."telemetry.firstSessionDate" = $currentTime
+                            $content."telemetry.lastSessionDate" = $currentTime
+                            $content."telemetry.currentSessionDate" = $currentTime
                         }
 
                         $content | ConvertTo-Json -Depth 10 | Set-Content $fullPath
@@ -1935,12 +2158,19 @@ USAGE:
 
 OPTIONS:
     -Operation <operation>     Specify operation to perform (default: help)
+                              Aliases: -Op, -Action
     -Mode <mode>              Specify cleanup mode (default: adaptive)
+                              Aliases: -M, -CleanupMode
     -DryRun                   Perform a dry run without making changes
-    -Verbose                  Enable verbose output and detailed logging
+                              Aliases: -Preview, -WhatIf
+    -VerboseOutput            Enable verbose output and detailed logging
+                              Aliases: -V, -VerboseMode
     -AutoInstallDeps          Automatically install missing dependencies
+                              Aliases: -AutoDeps, -InstallDeps
     -Interactive              Enable interactive mode selection (default: true)
+                              Aliases: -I
     -Help                     Show this help message
+                              Aliases: -H, -?
 
 OPERATIONS:
     clean                     Clean VS Code databases (remove Augment entries)
@@ -1960,17 +2190,32 @@ EXAMPLES:
     # Interactive mode (default) - shows mode selection menu
     .\install.ps1
 
-    # Complete cleanup with specific mode
+    # Show help with detailed information
+    .\install.ps1 -Help
+    .\install.ps1 -?
+
+    # Complete cleanup with specific mode (full syntax)
     .\install.ps1 -Operation all -Mode aggressive -Verbose
 
-    # Dry run to see what would be changed
-    .\install.ps1 -Operation all -Mode standard -DryRun -Verbose
+    # Same operation using aliases (shorter syntax)
+    .\install.ps1 -Op all -M aggressive -V
+
+    # Dry run to preview changes (multiple alias options)
+    .\install.ps1 -Op all -M standard -DryRun -V
+    .\install.ps1 -Action all -CleanupMode standard -Preview -VerboseMode
+    .\install.ps1 -Op all -M standard -WhatIf -V
 
     # Automated execution without interaction
-    .\install.ps1 -Operation all -Mode adaptive -Interactive:`$false
+    .\install.ps1 -Op all -M adaptive -I:`$false
 
     # Conservative cleanup for first-time users
-    .\install.ps1 -Operation all -Mode conservative
+    .\install.ps1 -Op all -M conservative
+
+    # Auto-install dependencies and run forensic cleanup
+    .\install.ps1 -Op all -M forensic -AutoDeps -V
+
+    # Quick database cleanup only
+    .\install.ps1 -Op clean -M standard -V
 
 REQUIREMENTS:
     - Windows 10 or higher
@@ -1999,80 +2244,7 @@ For more information, visit: https://github.com/IIXINGCHEN/augment-vips
 }
 
 # Remote execution detection and handling
-function Test-RemoteExecution {
-    # Check if we're running from a remote source (piped execution)
-    $isRemote = $false
-
-    try {
-        # Try multiple methods to get script path
-        $scriptPath = $MyInvocation.MyCommand.Path
-        if ([string]::IsNullOrEmpty($scriptPath)) {
-            $scriptPath = $PSCommandPath
-        }
-        if ([string]::IsNullOrEmpty($scriptPath)) {
-            $scriptPath = $MyInvocation.MyCommand.Definition
-        }
-
-        Write-LogDebug "Script path: $scriptPath"
-
-        if ([string]::IsNullOrEmpty($scriptPath)) {
-            # No script path usually means piped execution
-            Write-LogDebug "No script path - checking current directory for project structure"
-
-            # Check if we're in a project directory
-            $currentDir = Get-Location
-            $platformsDir = Join-Path $currentDir.Path "platforms"
-            $coreDir = Join-Path $currentDir.Path "core"
-
-            if ((Test-Path $platformsDir) -or (Test-Path $coreDir)) {
-                Write-LogDebug "Project structure found in current directory - local execution"
-                $isRemote = $false
-            } else {
-                Write-LogDebug "No project structure in current directory - likely piped execution"
-                $isRemote = $true
-            }
-        } elseif ($scriptPath -match "^http" -or $scriptPath -match "TemporaryFile") {
-            Write-LogDebug "Script path indicates remote source"
-            $isRemote = $true
-        } elseif ($scriptPath -match "Temp\\.*\.ps1$") {
-            # Script is in temp directory with .ps1 extension (likely downloaded)
-            Write-LogDebug "Script in temp directory"
-            $isRemote = $true
-        } else {
-            # Check if platforms directory exists relative to script
-            $scriptDir = Split-Path -Parent $scriptPath
-            $platformsDir = Join-Path $scriptDir "platforms"
-            Write-LogDebug "Checking platforms directory: $platformsDir"
-
-            if (Test-Path $platformsDir) {
-                Write-LogDebug "Platforms directory found - local execution"
-                $isRemote = $false
-            } else {
-                Write-LogDebug "Platforms directory not found"
-                # This might be remote execution if platforms directory doesn't exist
-                # But only if we're also not in a development environment
-                $gitDir = Join-Path $scriptDir ".git"
-                $coreDir = Join-Path $scriptDir "core"
-                Write-LogDebug "Checking git dir: $gitDir, core dir: $coreDir"
-
-                if (-not (Test-Path $gitDir) -and -not (Test-Path $coreDir)) {
-                    Write-LogDebug "Neither git nor core directory found - assuming remote"
-                    $isRemote = $true
-                } else {
-                    Write-LogDebug "Development environment detected - local execution"
-                    $isRemote = $false
-                }
-            }
-        }
-    } catch {
-        # If we can't determine, assume local for safety
-        Write-LogDebug "Exception in remote detection: $($_.Exception.Message)"
-        $isRemote = $false
-    }
-
-    Write-LogDebug "Remote execution detected: $isRemote"
-    return $isRemote
-}
+# Test-RemoteExecution function moved to beginning of script
 
 function Initialize-RemoteExecution {
     Write-LogInfo "Detected remote execution mode"
@@ -2147,9 +2319,274 @@ function Test-InteractiveMode {
     }
 }
 
+# Account restriction error detection and handling
+function Test-AugmentAccountRestriction {
+    <#
+    .SYNOPSIS
+        Detects if Augment account has restriction errors
+    .DESCRIPTION
+        Checks for "Your account has been restricted" and similar errors
+    #>
+    Write-LogInfo "Checking for Augment account restrictions..."
+
+    $restrictionFound = $false
+    $restrictionDetails = @()
+
+    # Check VS Code globalStorage for Augment data
+    $vsCodePaths = @(
+        "$env:APPDATA\Code\User\globalStorage",
+        "$env:LOCALAPPDATA\Code\User\globalStorage"
+    )
+
+    foreach ($basePath in $vsCodePaths) {
+        if (Test-Path $basePath) {
+            # Check state.vscdb for restriction markers
+            $dbPath = Join-Path $basePath "state.vscdb"
+            if (Test-Path $dbPath) {
+                try {
+                    $augmentData = & sqlite3 $dbPath "SELECT key, value FROM ItemTable WHERE key = 'Augment.vscode-augment';" 2>$null
+                    if ($augmentData -and $augmentData -like "*authenticated*") {
+                        $restrictionFound = $true
+                        $restrictionDetails += "Found authenticated Augment session in $dbPath"
+                        Write-LogWarning "Detected active Augment session that may cause restrictions"
+                    }
+                } catch {
+                    Write-LogDebug "Could not check database: $dbPath"
+                }
+            }
+
+            # Check for Augment globalStorage directory
+            $augmentDir = Join-Path $basePath "augment.vscode-augment"
+            if (Test-Path $augmentDir) {
+                $restrictionFound = $true
+                $restrictionDetails += "Found Augment global storage directory: $augmentDir"
+                Write-LogWarning "Detected Augment extension data that may cause restrictions"
+            }
+        }
+    }
+
+    # Check Cursor globalStorage for Augment data
+    $cursorPaths = @(
+        "$env:APPDATA\Cursor\User\globalStorage",
+        "$env:LOCALAPPDATA\Cursor\User\globalStorage"
+    )
+
+    foreach ($basePath in $cursorPaths) {
+        if (Test-Path $basePath) {
+            $dbPath = Join-Path $basePath "state.vscdb"
+            if (Test-Path $dbPath) {
+                try {
+                    $augmentData = & sqlite3 $dbPath "SELECT key FROM ItemTable WHERE key LIKE '%augment%' OR key LIKE '%Augment%';" 2>$null
+                    if ($augmentData) {
+                        $restrictionFound = $true
+                        $restrictionDetails += "Found Augment data in Cursor database: $dbPath"
+                        Write-LogWarning "Detected Augment data in Cursor that may cause restrictions"
+                    }
+                } catch {
+                    Write-LogDebug "Could not check Cursor database: $dbPath"
+                }
+            }
+        }
+    }
+
+    return @{
+        RestrictionFound = $restrictionFound
+        Details = $restrictionDetails
+    }
+}
+
+function Resolve-AugmentAccountRestriction {
+    <#
+    .SYNOPSIS
+        Resolves Augment account restriction errors
+    .DESCRIPTION
+        Performs comprehensive cleanup to resolve "Your account has been restricted" errors
+    #>
+    param([bool]$DryRun = $false)
+
+    Write-LogInfo "Starting Augment account restriction resolution..."
+
+    $resolveResult = @{
+        Success = $true
+        ItemsProcessed = 0
+        ErrorsEncountered = 0
+        Details = @()
+    }
+
+    try {
+        # Step 1: Clear VS Code Augment data
+        $vsCodePaths = @(
+            "$env:APPDATA\Code\User\globalStorage",
+            "$env:LOCALAPPDATA\Code\User\globalStorage"
+        )
+
+        foreach ($basePath in $vsCodePaths) {
+            if (Test-Path $basePath) {
+                Write-LogInfo "Processing VS Code data in: $basePath"
+
+                # Clear database entries
+                $dbPath = Join-Path $basePath "state.vscdb"
+                if (Test-Path $dbPath) {
+                    if (-not $DryRun) {
+                        $backupPath = "$dbPath.backup.$(Get-Date -Format 'yyyyMMdd_HHmmss')"
+                        Copy-Item $dbPath $backupPath
+                        Write-LogInfo "Database backup created: $backupPath"
+                    }
+
+                    $cleanupQueries = @(
+                        "DELETE FROM ItemTable WHERE key = 'Augment.vscode-augment';",
+                        "DELETE FROM ItemTable WHERE key LIKE 'secret://%augment%';",
+                        "DELETE FROM ItemTable WHERE key LIKE 'workbench.view.extension.augment%';"
+                    )
+
+                    foreach ($query in $cleanupQueries) {
+                        if ($DryRun) {
+                            Write-LogInfo "[DRY RUN] Would execute: $query"
+                        } else {
+                            try {
+                                & sqlite3 $dbPath $query 2>$null
+                                $resolveResult.ItemsProcessed++
+                                Write-LogDebug "Executed cleanup query: $query"
+                            } catch {
+                                $resolveResult.ErrorsEncountered++
+                                Write-LogWarning "Failed to execute query: $query - $($_.Exception.Message)"
+                            }
+                        }
+                    }
+                }
+
+                # Remove Augment globalStorage directory
+                $augmentDir = Join-Path $basePath "augment.vscode-augment"
+                if (Test-Path $augmentDir) {
+                    if ($DryRun) {
+                        Write-LogInfo "[DRY RUN] Would remove directory: $augmentDir"
+                    } else {
+                        try {
+                            Remove-Item $augmentDir -Recurse -Force
+                            $resolveResult.ItemsProcessed++
+                            $resolveResult.Details += "Removed Augment directory: $augmentDir"
+                            Write-LogSuccess "Removed Augment global storage: $augmentDir"
+                        } catch {
+                            $resolveResult.ErrorsEncountered++
+                            Write-LogError "Failed to remove directory: $augmentDir - $($_.Exception.Message)"
+                        }
+                    }
+                }
+            }
+        }
+
+        # Step 2: Clear Cursor Augment data
+        $cursorPaths = @(
+            "$env:APPDATA\Cursor\User\globalStorage",
+            "$env:LOCALAPPDATA\Cursor\User\globalStorage"
+        )
+
+        foreach ($basePath in $cursorPaths) {
+            if (Test-Path $basePath) {
+                Write-LogInfo "Processing Cursor data in: $basePath"
+
+                # Clear database entries
+                $dbPath = Join-Path $basePath "state.vscdb"
+                if (Test-Path $dbPath) {
+                    if (-not $DryRun) {
+                        $backupPath = "$dbPath.backup.$(Get-Date -Format 'yyyyMMdd_HHmmss')"
+                        Copy-Item $dbPath $backupPath
+                        Write-LogInfo "Cursor database backup created: $backupPath"
+                    }
+
+                    $cleanupQueries = @(
+                        "DELETE FROM ItemTable WHERE key LIKE '%augment%';",
+                        "DELETE FROM ItemTable WHERE key LIKE '%Augment%';"
+                    )
+
+                    foreach ($query in $cleanupQueries) {
+                        if ($DryRun) {
+                            Write-LogInfo "[DRY RUN] Would execute: $query"
+                        } else {
+                            try {
+                                & sqlite3 $dbPath $query 2>$null
+                                $resolveResult.ItemsProcessed++
+                                Write-LogDebug "Executed Cursor cleanup query: $query"
+                            } catch {
+                                $resolveResult.ErrorsEncountered++
+                                Write-LogWarning "Failed to execute Cursor query: $query - $($_.Exception.Message)"
+                            }
+                        }
+                    }
+                }
+
+                # Remove Augment globalStorage directory from Cursor
+                $augmentDir = Join-Path $basePath "augment.vscode-augment"
+                if (Test-Path $augmentDir) {
+                    if ($DryRun) {
+                        Write-LogInfo "[DRY RUN] Would remove Cursor directory: $augmentDir"
+                    } else {
+                        try {
+                            Remove-Item $augmentDir -Recurse -Force
+                            $resolveResult.ItemsProcessed++
+                            $resolveResult.Details += "Removed Augment directory from Cursor: $augmentDir"
+                            Write-LogSuccess "Removed Augment global storage from Cursor: $augmentDir"
+                        } catch {
+                            $resolveResult.ErrorsEncountered++
+                            Write-LogError "Failed to remove Cursor directory: $augmentDir - $($_.Exception.Message)"
+                        }
+                    }
+                }
+            }
+        }
+
+        $resolveResult.Details += "Processed $($resolveResult.ItemsProcessed) items with $($resolveResult.ErrorsEncountered) errors"
+
+        if ($resolveResult.ErrorsEncountered -gt 0) {
+            $resolveResult.Success = $false
+            Write-LogWarning "Account restriction resolution completed with errors"
+        } else {
+            Write-LogSuccess "Account restriction resolution completed successfully"
+            if (-not $DryRun) {
+                Write-LogInfo "IMPORTANT: Please restart VS Code/Cursor to apply changes"
+                Write-LogInfo "The 'Your account has been restricted' error should now be resolved"
+            }
+        }
+
+    } catch {
+        $resolveResult.Success = $false
+        $resolveResult.Details += "Critical error: $($_.Exception.Message)"
+        Write-LogError "Critical error during account restriction resolution: $($_.Exception.Message)"
+    }
+
+    return $resolveResult
+}
+
 # Main execution function
 function Main {
     Write-LogInfo "Starting Augment VIP Windows installer v${SCRIPT_VERSION}"
+
+    # Check for account restrictions first
+    Write-LogInfo "Performing initial account restriction check..."
+    $restrictionCheck = Test-AugmentAccountRestriction
+    if ($restrictionCheck.RestrictionFound) {
+        Write-LogWarning "Detected potential Augment account restrictions:"
+        foreach ($detail in $restrictionCheck.Details) {
+            Write-LogWarning "  - $detail"
+        }
+        Write-LogInfo "Automatically resolving account restrictions..."
+
+        $resolveResult = Resolve-AugmentAccountRestriction -DryRun $DryRun
+        if ($resolveResult.Success) {
+            Write-LogSuccess "Account restrictions resolved successfully"
+            Write-LogInfo "Details:"
+            foreach ($detail in $resolveResult.Details) {
+                Write-LogInfo "  - $detail"
+            }
+        } else {
+            Write-LogError "Failed to resolve account restrictions"
+            foreach ($detail in $resolveResult.Details) {
+                Write-LogError "  - $detail"
+            }
+        }
+    } else {
+        Write-LogInfo "No account restrictions detected"
+    }
 
     # Determine the operation to perform
     $actualOperation = Get-DefaultOperation
@@ -2218,7 +2655,7 @@ function Main {
     }
 
     # Execute Windows platform implementation
-    if (Invoke-WindowsPlatform -Operation $actualOperation -DryRun $DryRun -Verbose $Verbose) {
+    if (Invoke-WindowsPlatform -Operation $actualOperation -DryRun $DryRun -Verbose $VerboseOutput) {
         Write-LogSuccess "Augment VIP operation completed successfully"
         Write-AuditLog "INSTALLER_COMPLETE" "Installation completed successfully: $actualOperation"
 

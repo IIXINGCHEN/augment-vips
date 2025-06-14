@@ -1,14 +1,41 @@
-# Logs
-logs/*.log
-logs/*.audit
+# Logs and runtime files
+logs/
+*.log
+*.audit
+*.trace
 
 # Temporary files
 *.tmp
 *.temp
+*_temp.*
+*_tmp.*
 
 # Backup files
 *.backup
+*.backup.*
 *.bak
+*.old
+
+# Database backups
+*.vscdb.backup*
+*.db.backup*
+state.vscdb.backup*
+
+# PowerShell temporary files
+*.ps1.backup*
+*.ps1.tmp*
+
+# Task tracking and development notes
+REAL_TIME_UNIFICATION_TASK.md
+*_TASK.md
+*_NOTES.md
+TODO.md
+CHANGELOG_TEMP.md
+
+# Temporary test files
+test-*.ps1
+*-test-*.ps1
+temp-*.ps1
 
 # OS generated files
 .DS_Store

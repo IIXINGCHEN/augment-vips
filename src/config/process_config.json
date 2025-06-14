@@ -1,79 +1,78 @@
 {
-  "version": "2.0.0",
-  "description": "进程检测和管理配置",
-  "process_detection": {
-    "enabled": true,
-    "auto_detect": true,
-    "force_close_on_conflict": false,
-    "detection_timeout": 30,
-    "close_timeout": 15,
-    "force_close_timeout": 5
+  "version": "3.0.0",
+  "description": "Process management configuration for Augment VIP",
+  "last_updated": "2025-06-14T20:30:00Z",
+  "process_management": {
+    "detection": {
+      "enabled": true,
+      "auto_detect": true,
+      "force_close_on_conflict": false,
+      "detection_timeout": 30,
+      "close_timeout": 15,
+      "force_close_timeout": 5
+    }
   },
   "supported_processes": {
     "vscode_stable": {
-      "process_names": ["Code.exe", "code"],
-      "window_titles": ["Visual Studio Code"],
+      "process_names": [
+        "Code.exe",
+        "code"
+      ],
+      "window_titles": [
+        "Visual Studio Code"
+      ],
       "display_name": "Visual Studio Code",
       "priority": 1,
       "close_method": "graceful_first"
     },
     "vscode_insiders": {
-      "process_names": ["Code - Insiders.exe", "code-insiders"],
-      "window_titles": ["Visual Studio Code - Insiders"],
+      "process_names": [
+        "Code - Insiders.exe",
+        "code-insiders"
+      ],
+      "window_titles": [
+        "Visual Studio Code - Insiders"
+      ],
       "display_name": "Visual Studio Code Insiders",
       "priority": 2,
       "close_method": "graceful_first"
     },
     "cursor": {
-      "process_names": ["Cursor.exe", "cursor"],
-      "window_titles": ["Cursor"],
+      "process_names": [
+        "Cursor.exe",
+        "cursor"
+      ],
+      "window_titles": [
+        "Cursor"
+      ],
       "display_name": "Cursor",
       "priority": 3,
-      "close_method": "graceful_first"
-    },
-    "codium": {
-      "process_names": ["VSCodium.exe", "codium"],
-      "window_titles": ["VSCodium"],
-      "display_name": "VSCodium",
-      "priority": 4,
-      "close_method": "graceful_first"
-    },
-    "code_oss": {
-      "process_names": ["code-oss.exe", "code-oss"],
-      "window_titles": ["Code - OSS"],
-      "display_name": "Code - OSS",
-      "priority": 5,
       "close_method": "graceful_first"
     }
   },
   "close_methods": {
     "graceful_first": {
-      "description": "先尝试优雅关闭，失败后强制结束",
+      "description": "Try graceful close first, then force if needed",
       "steps": [
         {
           "method": "close_main_window",
           "timeout": 10,
-          "description": "关闭主窗口"
+          "description": "Close main window gracefully"
         },
         {
           "method": "terminate_process",
           "timeout": 5,
-          "description": "终止进程"
-        },
-        {
-          "method": "kill_process",
-          "timeout": 3,
-          "description": "强制结束进程"
+          "description": "Terminate process if graceful close fails"
         }
       ]
     },
     "force_only": {
-      "description": "直接强制结束",
+      "description": "Force close immediately",
       "steps": [
         {
           "method": "kill_process",
-          "timeout": 3,
-          "description": "强制结束进程"
+          "timeout": 5,
+          "description": "Force kill process"
         }
       ]
     }
@@ -85,9 +84,32 @@
     "default_action": "prompt"
   },
   "logging": {
-    "log_detection": true,
-    "log_close_attempts": true,
-    "log_errors": true,
-    "detailed_logging": false
+    "level": "info",
+    "include_process_details": true,
+    "log_process_detection": true,
+    "log_close_attempts": true
+  },
+  "error_handling": {
+    "continue_on_detection_failure": true,
+    "retry_attempts": 3,
+    "retry_delay_seconds": 1,
+    "fallback_to_manual": true
+  },
+  "platform_specific": {
+    "windows": {
+      "use_wmi": true,
+      "use_tasklist": true,
+      "check_window_titles": true
+    },
+    "linux": {
+      "use_ps": true,
+      "use_pgrep": true,
+      "check_desktop_files": true
+    },
+    "macos": {
+      "use_ps": true,
+      "use_osascript": true,
+      "check_applications": true
+    }
   }
 }

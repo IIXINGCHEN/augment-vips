@@ -1,0 +1,155 @@
+{
+  "version": "2.0.0",
+  "name": "augment-vip-logger-config",
+  "description": "Unified logging configuration for Augment VIP",
+  "created": "2025-01-27T00:00:00.000Z",
+  "updated": "2025-01-27T00:00:00.000Z",
+  
+  "LogLevel": "INFO",
+  "OutputTargets": ["Console", "File"],
+  "MaxLogFileSize": 10485760,
+  "LogRotationCount": 5,
+  "TimestampFormat": "yyyy-MM-dd HH:mm:ss",
+  "EnableColors": true,
+  "EnableAudit": true,
+  
+  "LogLevels": {
+    "DEBUG": 0,
+    "INFO": 1,
+    "WARNING": 2,
+    "ERROR": 3,
+    "SUCCESS": 4,
+    "CRITICAL": 5
+  },
+  
+  "ColorConfiguration": {
+    "DEBUG": "Gray",
+    "INFO": "White",
+    "WARNING": "Yellow",
+    "ERROR": "Red",
+    "SUCCESS": "Green",
+    "CRITICAL": "Magenta"
+  },
+  
+  "FileConfiguration": {
+    "LogDirectory": "logs",
+    "LogFileName": "augment-vip.log",
+    "AuditFileName": "audit.log",
+    "Encoding": "UTF8",
+    "BufferSize": 4096,
+    "FlushInterval": 5000
+  },
+  
+  "ConsoleConfiguration": {
+    "EnableColors": true,
+    "ShowTimestamp": true,
+    "ShowLevel": true,
+    "ShowCategory": true,
+    "ShowProcessId": false,
+    "ShowThreadId": false
+  },
+  
+  "AuditConfiguration": {
+    "EnableAudit": true,
+    "AuditLevels": ["ERROR", "CRITICAL", "WARNING"],
+    "IncludeSystemInfo": true,
+    "IncludeStackTrace": false,
+    "MaxAuditFileSize": 5242880,
+    "AuditRotationCount": 3
+  },
+  
+  "PerformanceConfiguration": {
+    "AsyncLogging": false,
+    "BatchSize": 100,
+    "FlushThreshold": 1000,
+    "MaxQueueSize": 10000
+  },
+  
+  "SecurityConfiguration": {
+    "SanitizeMessages": true,
+    "MaskSensitiveData": true,
+    "SensitivePatterns": [
+      "password",
+      "secret",
+      "key",
+      "token",
+      "credential",
+      "auth",
+      "session"
+    ],
+    "MaskCharacter": "*",
+    "LogFilePermissions": "600"
+  },
+  
+  "CategoryConfiguration": {
+    "DefaultCategories": [
+      "GENERAL",
+      "SECURITY",
+      "DATABASE",
+      "NETWORK",
+      "FILE_OPERATION",
+      "PROCESS",
+      "CONFIGURATION",
+      "VALIDATION",
+      "CLEANUP",
+      "BACKUP",
+      "RESTORE"
+    ],
+    "CategoryLevels": {
+      "SECURITY": "WARNING",
+      "DATABASE": "INFO",
+      "NETWORK": "INFO",
+      "FILE_OPERATION": "DEBUG",
+      "PROCESS": "INFO",
+      "CONFIGURATION": "INFO",
+      "VALIDATION": "WARNING",
+      "CLEANUP": "INFO",
+      "BACKUP": "INFO",
+      "RESTORE": "INFO"
+    }
+  },
+  
+  "EnvironmentConfiguration": {
+    "Development": {
+      "LogLevel": "DEBUG",
+      "EnableColors": true,
+      "OutputTargets": ["Console", "File"],
+      "EnableAudit": false
+    },
+    "Testing": {
+      "LogLevel": "INFO",
+      "EnableColors": false,
+      "OutputTargets": ["File"],
+      "EnableAudit": true
+    },
+    "Production": {
+      "LogLevel": "WARNING",
+      "EnableColors": false,
+      "OutputTargets": ["File"],
+      "EnableAudit": true,
+      "SanitizeMessages": true
+    }
+  },
+  
+  "IntegrationConfiguration": {
+    "Syslog": {
+      "Enabled": false,
+      "Server": "localhost",
+      "Port": 514,
+      "Protocol": "UDP",
+      "Facility": "local0"
+    },
+    "EventLog": {
+      "Enabled": false,
+      "Source": "AugmentVIP",
+      "LogName": "Application"
+    },
+    "RemoteLogging": {
+      "Enabled": false,
+      "Endpoint": "",
+      "ApiKey": "",
+      "BatchSize": 50,
+      "RetryCount": 3
+    }
+  }
+}

@@ -1,0 +1,450 @@
+{
+  "version": "3.0.0",
+  "name": "augment-vip-unified-config",
+  "description": "Unified configuration for Augment VIP - combines all runtime settings",
+  "last_updated": "2025-01-27T16:00:00Z",
+  "general": {
+    "auto_backup": true,
+    "backup_retention_days": 30,
+    "max_backup_size_mb": 1024,
+    "compression_enabled": true,
+    "verification_enabled": true,
+    "dry_run_default": false,
+    "verbose_logging": false
+  },
+  "security": {
+    "security_level": "high",
+    "allowed_operations": [
+      "database_clean",
+      "telemetry_modify",
+      "backup_create",
+      "backup_restore",
+      "path_discovery",
+      "dependency_check",
+      "validation_check",
+      "report_generation",
+      "migration_extract",
+      "migration_transform",
+      "migration_insert",
+      "migration_validate"
+    ],
+    "restricted_paths": [
+      "/etc",
+      "/usr",
+      "/bin",
+      "/sbin",
+      "/boot",
+      "/sys",
+      "/proc",
+      "C:\\Windows",
+      "C:\\Program Files",
+      "C:\\Program Files (x86)"
+    ],
+    "require_confirmation": {
+      "database_operations": true,
+      "telemetry_modifications": true,
+      "system_file_access": true
+    },
+    "input_validation": {
+      "sanitization_level": "strict",
+      "max_input_length": 1024,
+      "max_path_length": 4096,
+      "max_filename_length": 255,
+      "allow_unicode": false,
+      "allow_special_characters": false
+    },
+    "file_security": {
+      "max_file_size_mb": 100,
+      "allowed_extensions": [
+        "vscdb",
+        "json",
+        "backup",
+        "log",
+        "txt"
+      ],
+      "integrity_verification": true,
+      "checksum_algorithm": "sha256"
+    },
+    "audit_logging": {
+      "enabled": true,
+      "include_user_actions": true,
+      "include_system_events": true,
+      "tamper_protection": true
+    }
+  },
+  "logging": {
+    "level": "info",
+    "format": "simple",
+    "structured": false,
+    "rotation": {
+      "enabled": true,
+      "max_size_mb": 10,
+      "max_files": 10
+    },
+    "remote": {
+      "enabled": false,
+      "server": "",
+      "api_key": ""
+    },
+    "audit": {
+      "enabled": true,
+      "separate_file": true,
+      "retention_days": 90
+    }
+  },
+  "database": {
+    "timeout_seconds": 30,
+    "max_size_mb": 1024,
+    "backup_before_clean": true,
+    "integrity_check": true,
+    "vacuum_after_clean": true,
+    "patterns_to_clean": [
+      "%augment%",
+      "%telemetry%",
+      "%machineId%",
+      "%deviceId%",
+      "%sqmId%",
+      "%uuid%",
+      "%session%",
+      "%lastSessionDate%",
+      "%lastSyncDate%"
+    ]
+  },
+  "telemetry": {
+    "backup_before_modify": true,
+    "validate_json": true,
+    "fields_to_modify": [
+      "telemetry.machineId",
+      "telemetry.devDeviceId",
+      "telemetry.sqmId"
+    ],
+    "id_generation": {
+      "machine_id_length": 64,
+      "use_secure_random": true,
+      "uuid_version": 4
+    }
+  },
+  "process_management": {
+    "detection": {
+      "enabled": true,
+      "auto_detect": true,
+      "force_close_on_conflict": false,
+      "detection_timeout": 30,
+      "close_timeout": 15,
+      "force_close_timeout": 5
+    },
+    "supported_processes": {
+      "vscode_stable": {
+        "process_names": [
+          "Code.exe",
+          "code"
+        ],
+        "window_titles": [
+          "Visual Studio Code"
+        ],
+        "display_name": "Visual Studio Code",
+        "priority": 1,
+        "close_method": "graceful_first"
+      },
+      "vscode_insiders": {
+        "process_names": [
+          "Code - Insiders.exe",
+          "code-insiders"
+        ],
+        "window_titles": [
+          "Visual Studio Code - Insiders"
+        ],
+        "display_name": "Visual Studio Code Insiders",
+        "priority": 2,
+        "close_method": "graceful_first"
+      },
+      "cursor": {
+        "process_names": [
+          "Cursor.exe",
+          "cursor"
+        ],
+        "window_titles": [
+          "Cursor"
+        ],
+        "display_name": "Cursor",
+        "priority": 3,
+        "close_method": "graceful_first"
+      }
+    },
+    "user_interaction": {
+      "prompt_before_close": true,
+      "show_process_details": true,
+      "allow_skip": true,
+      "default_action": "prompt"
+    }
+  },
+  "paths": {
+    "discovery": {
+      "search_depth": 3,
+      "follow_symlinks": false,
+      "include_portable": true,
+      "include_insiders": true
+    },
+    "validation": {
+      "max_path_length": 4096,
+      "max_filename_length": 255,
+      "allowed_extensions": [
+        "vscdb",
+        "json",
+        "backup"
+      ]
+    }
+  },
+  "dependencies": {
+    "required": [
+      "sqlite3",
+      "curl",
+      "jq"
+    ],
+    "optional": [
+      "git",
+      "wget",
+      "openssl"
+    ],
+    "auto_install": false,
+    "version_check": true,
+    "minimum_versions": {
+      "sqlite3": "3.0.0",
+      "curl": "7.0.0",
+      "jq": "1.5"
+    }
+  },
+  "platform_specific": {
+    "windows": {
+      "package_manager": "chocolatey",
+      "execution_policy": "bypass",
+      "require_admin": false,
+      "powershell_version": "5.1",
+      "paths": {
+        "appdata": "%APPDATA%",
+        "localappdata": "%LOCALAPPDATA%",
+        "programfiles": "%PROGRAMFILES%"
+      }
+    },
+    "linux": {
+      "package_managers": [
+        "apt",
+        "dnf",
+        "yum",
+        "pacman",
+        "zypper"
+      ],
+      "require_sudo": true,
+      "shell": "bash",
+      "paths": {
+        "config": "~/.config",
+        "data": "~/.local/share",
+        "cache": "~/.cache"
+      }
+    },
+    "macos": {
+      "package_manager": "homebrew",
+      "require_sudo": false,
+      "shell": "bash",
+      "check_sip": true,
+      "paths": {
+        "library": "~/Library",
+        "application_support": "~/Library/Application Support",
+        "caches": "~/Library/Caches"
+      }
+    }
+  },
+  "vscode": {
+    "supported_versions": [
+      "stable",
+      "insiders"
+    ],
+    "data_directories": {
+      "windows": [
+        "%APPDATA%\\Code",
+        "%LOCALAPPDATA%\\Code",
+        "%APPDATA%\\Code - Insiders",
+        "%LOCALAPPDATA%\\Code - Insiders"
+      ],
+      "linux": [
+        "~/.config/Code",
+        "~/.vscode",
+        "~/.config/Code - Insiders",
+        "~/.vscode-insiders"
+      ],
+      "macos": [
+        "~/Library/Application Support/Code",
+        "~/.vscode",
+        "~/Library/Application Support/Code - Insiders",
+        "~/.vscode-insiders"
+      ]
+    },
+    "database_patterns": [
+      "User/workspaceStorage/*/state.vscdb",
+      "User/globalStorage/*/state.vscdb",
+      "Cache/*/*.vscdb",
+      "CachedData/*/*.vscdb"
+    ],
+    "storage_patterns": [
+      "User/storage.json",
+      "User/globalStorage/storage.json",
+      "User/workspaceStorage/*/storage.json"
+    ]
+  },
+  "performance": {
+    "max_concurrent_operations": 4,
+    "timeout_seconds": 300,
+    "memory_limit_mb": 512,
+    "progress_reporting": true,
+    "benchmark_operations": false
+  },
+  "error_handling": {
+    "retry_attempts": 3,
+    "retry_delay_seconds": 1,
+    "continue_on_error": false,
+    "detailed_error_messages": true,
+    "stack_trace_in_logs": true
+  },
+  "reporting": {
+    "generate_reports": true,
+    "report_formats": [
+      "txt",
+      "json"
+    ],
+    "include_statistics": true,
+    "include_file_lists": true,
+    "include_performance_metrics": true
+  },
+  "validation": {
+    "input_validation": {
+      "max_input_length": 1024,
+      "max_command_length": 256,
+      "max_argument_count": 32,
+      "sanitization_level": "strict"
+    },
+    "file_validation": {
+      "check_file_size": true,
+      "check_file_permissions": true,
+      "check_file_integrity": true,
+      "max_file_size_mb": 100
+    }
+  },
+  "backup": {
+    "strategy": "incremental",
+    "compression": "gzip",
+    "encryption": false,
+    "verification": true,
+    "cleanup": {
+      "enabled": true,
+      "retention_days": 30,
+      "max_backups": 50
+    },
+    "naming": {
+      "timestamp_format": "%Y%m%d_%H%M%S",
+      "include_checksum": false,
+      "prefix": "backup_"
+    }
+  },
+  "monitoring": {
+    "health_checks": true,
+    "performance_monitoring": true,
+    "resource_monitoring": true,
+    "alerts": {
+      "enabled": false,
+      "email": "",
+      "webhook": ""
+    }
+  },
+  "compliance": {
+    "gdpr_compliance": true,
+    "data_retention_policy": true,
+    "audit_trail": true,
+    "encryption_at_rest": false,
+    "access_logging": true
+  },
+  "migration": {
+    "enabled": true,
+    "backup_before_migration": true,
+    "validate_after_migration": true,
+    "batch_size": 1000,
+    "timeout_seconds": 300,
+    "dry_run_default": false,
+    "transformation_rules": {
+      "machine_id_pattern": "machineId",
+      "device_id_pattern": "deviceId",
+      "sqm_id_pattern": "sqmId",
+      "uuid_pattern": "uuid",
+      "session_pattern": "session",
+      "custom_patterns": []
+    },
+    "id_generation": {
+      "preserve_format": true,
+      "use_secure_random": true,
+      "validation_enabled": true,
+      "fallback_strategy": "timestamp_based",
+      "machine_id_length": 64,
+      "uuid_version": 4
+    },
+    "safety": {
+      "require_confirmation": true,
+      "max_records_per_operation": 10000,
+      "integrity_check_before": true,
+      "integrity_check_after": true,
+      "rollback_on_failure": true
+    },
+    "reporting": {
+      "generate_migration_report": true,
+      "include_statistics": true,
+      "include_transformation_details": true,
+      "report_format": "json"
+    },
+    "performance": {
+      "parallel_processing": false,
+      "memory_optimization": true,
+      "progress_reporting": true,
+      "benchmark_enabled": false
+    },
+    "vscode_backup": {
+      "enabled": true,
+      "backup_before_migration": true,
+      "backup_components": {
+        "configurations": true,
+        "extensions": true,
+        "sessions": true,
+        "databases": true,
+        "workspaces": true,
+        "keybindings": true,
+        "snippets": true,
+        "themes": true
+      },
+      "backup_retention": {
+        "max_backups": 10,
+        "retention_days": 30,
+        "auto_cleanup": true
+      },
+      "backup_compression": {
+        "enabled": false,
+        "compression_level": 6
+      },
+      "backup_verification": {
+        "enabled": true,
+        "checksum_validation": true,
+        "integrity_check": true
+      }
+    }
+  },
+  "development": {
+    "debug_mode": false,
+    "test_mode": false,
+    "mock_operations": false,
+    "profiling": false,
+    "code_coverage": false
+  },
+  "metadata": {
+    "schema_version": "3.0",
+    "config_hash": "",
+    "last_validated": "",
+    "validation_errors": [],
+    "environment": "production"
+  }
+}

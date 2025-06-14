@@ -1,0 +1,311 @@
+{
+  "version": "3.0.0",
+  "description": "Unified patterns and cleanup modes for Augment VIP",
+  "last_updated": "2025-01-27T16:00:00Z",
+  
+  "database_patterns": {
+    "augment_core": [
+      "%augment%",
+      "Augment.%",
+      "augment.%",
+      "%augment-chat%",
+      "%augment-panel%",
+      "%augment-view%",
+      "%augment-extension%",
+      "%vscode-augment%",
+      "%augmentcode%",
+      "%augment.code%",
+      "%memento/webviewView.augment%",
+      "%workbench.view.extension.augment%",
+      "%workbench.panel.augment%",
+      "%extensionHost.augment%",
+      "Augment.vscode-augment",
+      "%actionSystemStates%",
+      "%workspaceMessageStates%",
+      "%sidecar.agent.%",
+      "%agentAutoModeApproved%",
+      "%lastEnabledExtensionVersion%"
+    ],
+    "telemetry": [
+      "%telemetry%",
+      "%machineId%",
+      "%deviceId%",
+      "%sqmId%",
+      "%sessionId%",
+      "%installationId%",
+      "%userId%",
+      "%lastSessionDate%",
+      "%lastSyncDate%",
+      "%firstSessionDate%",
+      "%currentSessionDate%"
+    ],
+    "trial_data": [
+      "%context7%",
+      "%trial%",
+      "%trialPrompt%",
+      "%trial-prompt%",
+      "%licenseCheck%",
+      "%license-check%",
+      "%trialExpired%",
+      "%trial-expired%",
+      "%trialRemaining%",
+      "%trial-remaining%",
+      "%trialStatus%",
+      "%trial-status%",
+      "%trialLimit%",
+      "%trial-limit%",
+      "%trialCount%",
+      "%trial-count%",
+      "%subscription%",
+      "%subscriptionStatus%",
+      "%licenseKey%",
+      "%license-key%",
+      "%licenseType%",
+      "%license-type%"
+    ],
+    "encrypted_sessions": [
+      "secret://%augment%",
+      "secret://%vscode-augment%",
+      "secret://%sessions%",
+      "%augment.sessions%",
+      "%extensionId%augment%",
+      "%key%augment%"
+    ],
+    "authentication": [
+      "%authToken%",
+      "%auth-token%",
+      "%accessToken%",
+      "%access-token%",
+      "%refreshToken%",
+      "%refresh-token%"
+    ],
+    "workspace_data": [
+      "%workspaceMessageStates%",
+      "%workspaceStates%",
+      "%messageStates%",
+      "%workspaceSummary%",
+      "%workspaceTracking%",
+      "%folderRoot%",
+      "%projectRoot%",
+      "%workspaceRoot%",
+      "%recentWorkspaces%",
+      "%recentFolders%",
+      "%profileAssociations%"
+    ]
+  },
+  
+  "file_paths": {
+    "storage_files": [
+      "User/storage.json",
+      "User/globalStorage/storage.json"
+    ],
+    "token_paths": [
+      "User/globalStorage/ms-vscode.vscode-account/*",
+      "User/globalStorage/github.vscode-pull-request-github/*",
+      "User/globalStorage/*.authentication/*",
+      "User/workspaceStorage/*/vscode.authentication",
+      "User/globalStorage/augment.vscode-augment/*",
+      "User/workspaceStorage/*/augment.vscode-augment/*"
+    ],
+    "extension_storage": [
+      "User/globalStorage/augment.*",
+      "User/globalStorage/*augment*",
+      "User/workspaceStorage/*/augment.*"
+    ]
+  },
+  
+  "cleanup_modes": {
+    "minimal": {
+      "name": "Minimal Cleanup",
+      "description": "Clean only basic trial data with lowest risk",
+      "risk_level": "very_low",
+      "backup_required": true,
+      "confirmation_required": true,
+      "operations": {
+        "database_clean": {
+          "enabled": true,
+          "strategy": "trial_only",
+          "patterns": ["trial_data"],
+          "backup_before": true
+        },
+        "config_clean": {
+          "enabled": false
+        },
+        "cache_clean": {
+          "enabled": true,
+          "strategy": "safe"
+        }
+      },
+      "estimated_time_seconds": 30,
+      "effectiveness_score": 60
+    },
+    
+    "conservative": {
+      "name": "Conservative Cleanup",
+      "description": "Clean clearly safe data, suitable for cautious users",
+      "risk_level": "low",
+      "backup_required": true,
+      "confirmation_required": true,
+      "operations": {
+        "database_clean": {
+          "enabled": true,
+          "strategy": "selective",
+          "patterns": ["trial_data", "telemetry"],
+          "backup_before": true
+        },
+        "config_clean": {
+          "enabled": true,
+          "strategy": "trial_only",
+          "backup_before": true
+        },
+        "cache_clean": {
+          "enabled": true,
+          "strategy": "safe"
+        }
+      },
+      "estimated_time_seconds": 60,
+      "effectiveness_score": 75
+    },
+    
+    "standard": {
+      "name": "Standard Cleanup",
+      "description": "Balanced cleanup effectiveness and safety (recommended)",
+      "risk_level": "medium",
+      "backup_required": true,
+      "confirmation_required": false,
+      "operations": {
+        "database_clean": {
+          "enabled": true,
+          "strategy": "comprehensive",
+          "patterns": ["augment_core", "trial_data", "telemetry"],
+          "backup_before": true
+        },
+        "config_clean": {
+          "enabled": true,
+          "strategy": "selective",
+          "backup_before": true
+        },
+        "cache_clean": {
+          "enabled": true,
+          "strategy": "full"
+        },
+        "extension_clean": {
+          "enabled": true,
+          "strategy": "selective"
+        }
+      },
+      "estimated_time_seconds": 120,
+      "effectiveness_score": 85
+    },
+    
+    "aggressive": {
+      "name": "Aggressive Cleanup",
+      "description": "Maximum cleanup effectiveness for experienced users",
+      "risk_level": "high",
+      "backup_required": true,
+      "confirmation_required": true,
+      "operations": {
+        "database_clean": {
+          "enabled": true,
+          "strategy": "comprehensive",
+          "patterns": ["augment_core", "trial_data", "telemetry", "encrypted_sessions", "workspace_data"],
+          "backup_before": true
+        },
+        "config_clean": {
+          "enabled": true,
+          "strategy": "comprehensive",
+          "backup_before": true
+        },
+        "cache_clean": {
+          "enabled": true,
+          "strategy": "full"
+        },
+        "extension_clean": {
+          "enabled": true,
+          "strategy": "comprehensive"
+        },
+        "workspace_clean": {
+          "enabled": true,
+          "strategy": "full"
+        }
+      },
+      "estimated_time_seconds": 180,
+      "effectiveness_score": 95
+    },
+    
+    "forensic": {
+      "name": "Forensic Cleanup",
+      "description": "Complete data removal for maximum privacy",
+      "risk_level": "very_high",
+      "backup_required": true,
+      "confirmation_required": true,
+      "operations": {
+        "database_clean": {
+          "enabled": true,
+          "strategy": "forensic",
+          "patterns": ["augment_core", "trial_data", "telemetry", "encrypted_sessions", "authentication", "workspace_data"],
+          "backup_before": true,
+          "secure_delete": true
+        },
+        "config_clean": {
+          "enabled": true,
+          "strategy": "forensic",
+          "backup_before": true,
+          "secure_delete": true
+        },
+        "cache_clean": {
+          "enabled": true,
+          "strategy": "forensic",
+          "secure_delete": true
+        },
+        "extension_clean": {
+          "enabled": true,
+          "strategy": "forensic",
+          "secure_delete": true
+        },
+        "workspace_clean": {
+          "enabled": true,
+          "strategy": "forensic",
+          "secure_delete": true
+        },
+        "registry_clean": {
+          "enabled": true,
+          "strategy": "forensic",
+          "backup_before": true
+        }
+      },
+      "estimated_time_seconds": 300,
+      "effectiveness_score": 100
+    }
+  },
+  
+  "search_patterns": {
+    "file_extensions": [
+      "*.vscdb",
+      "*.db",
+      "*.sqlite",
+      "*.json",
+      "*.log",
+      "*.cache"
+    ],
+    "directory_patterns": [
+      "*augment*",
+      "*Augment*",
+      "*context7*",
+      "*Context7*",
+      "*trial*",
+      "*Trial*"
+    ],
+    "content_patterns": [
+      "augment",
+      "Augment",
+      "context7",
+      "Context7",
+      "trial",
+      "Trial",
+      "machineId",
+      "deviceId",
+      "sqmId"
+    ]
+  }
+}

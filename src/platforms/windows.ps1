@@ -7,45 +7,37 @@
 param(
     [string]$Operation = "help",
     [switch]$DryRun = $false,
-    [switch]$Verbose = $false,
     [string]$ConfigFile = ""
 )
 
 # Set error handling and execution policy
 $ErrorActionPreference = "Stop"
-$VerbosePreference = if ($Verbose) { "Continue" } else { "SilentlyContinue" }
+$VerbosePreference = if ($VerbosePreference -eq 'Continue') { "Continue" } else { "SilentlyContinue" }
 
-# Logging functions
-function Write-LogInfo {
-    param([string]$Message)
-    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-    Write-Host "[$timestamp] [INFO] $Message" -ForegroundColor Cyan
-}
+# Load unified logging module
+$script:UnifiedLoggerLoaded = $false
+try {
+    $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+    $projectRoot = Split-Path -Parent (Split-Path -Parent $scriptDir)
+    $unifiedLoggerPath = Join-Path $projectRoot "src\core\AugmentLogger.ps1"
 
-function Write-LogSuccess {
-    param([string]$Message)
-    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-    Write-Host "[$timestamp] [SUCCESS] $Message" -ForegroundColor Green
-}
-
-function Write-LogError {
-    param([string]$Message)
-    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-    Write-Host "[$timestamp] [ERROR] $Message" -ForegroundColor Red
-}
-
-function Write-LogWarning {
-    param([string]$Message)
-    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-    Write-Host "[$timestamp] [WARNING] $Message" -ForegroundColor Yellow
-}
-
-function Write-LogDebug {
-    param([string]$Message)
-    if ($Verbose) {
-        $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-        Write-Host "[$timestamp] [DEBUG] $Message" -ForegroundColor Gray
+    if (Test-Path $unifiedLoggerPath) {
+        . $unifiedLoggerPath
+        $script:UnifiedLoggerLoaded = $true
+        Write-Host "✅ Unified logging module loaded successfully" -ForegroundColor Green
+    } else {
+        Write-Host "Unified logging module not found, using fallback" -ForegroundColor Yellow
     }
+} catch {
+    Write-Host "Failed to load unified logging module: $($_.Exception.Message)" -ForegroundColor Yellow
+}
+
+# Load unified logging bootstrap
+$scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+$loggingBootstrapPath = Join-Path $scriptDir "..\core\logging\logging_bootstrap.ps1"
+if (Test-Path $loggingBootstrapPath) {
+    . $loggingBootstrapPath
+    Ensure-LoggingAvailable -ScriptName "WindowsPlatform"
 }
 
 # Script metadata
@@ -69,9 +61,9 @@ try {
     # Set up configuration file path
     if ([string]::IsNullOrEmpty($ConfigFile)) {
         if ($script:USE_SRC_STRUCTURE) {
-            $ConfigFile = "src\config\settings.json"
+            $ConfigFile = "src\config\config.json"
         } else {
-            $ConfigFile = "config\settings.json"
+            $ConfigFile = "config\config.json"
         }
     }
 
@@ -85,43 +77,18 @@ try {
     exit 1
 }
 
-# Logging functions (PowerShell equivalent of core/common.sh)
-function Write-LogInfo {
-    param([string]$Message)
-    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-    Write-Host "[$timestamp] [INFO] $Message" -ForegroundColor Cyan
-    Add-Content -Path $LogFile -Value "[$timestamp] [INFO] $Message" -ErrorAction SilentlyContinue
-}
-
-function Write-LogSuccess {
-    param([string]$Message)
-    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-    Write-Host "[$timestamp] [SUCCESS] $Message" -ForegroundColor Green
-    Add-Content -Path $LogFile -Value "[$timestamp] [SUCCESS] $Message" -ErrorAction SilentlyContinue
-}
-
-function Write-LogWarning {
-    param([string]$Message)
-    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-    Write-Host "[$timestamp] [WARN] $Message" -ForegroundColor Yellow
-    Add-Content -Path $LogFile -Value "[$timestamp] [WARN] $Message" -ErrorAction SilentlyContinue
-}
-
-function Write-LogError {
-    param([string]$Message)
-    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-    Write-Host "[$timestamp] [ERROR] $Message" -ForegroundColor Red
-    Add-Content -Path $LogFile -Value "[$timestamp] [ERROR] $Message" -ErrorAction SilentlyContinue
-    Add-Content -Path $AuditLogFile -Value "[$timestamp] [ERROR] $Message" -ErrorAction SilentlyContinue
-}
-
+# Compatibility wrapper for audit logging to bridge old and new interfaces
 function Write-AuditLog {
     param([string]$Action, [string]$Details)
-    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-    $user = $env:USERNAME
-    $processId = $PID
-    $auditEntry = "[$timestamp] [PID:$processId] [USER:$user] [ACTION:$Action] $Details"
-    Add-Content -Path $AuditLogFile -Value $auditEntry -ErrorAction SilentlyContinue
+
+    if ($script:UnifiedLoggerLoaded) {
+        # Use unified logger's Write-AugmentLog function directly to avoid recursion
+        Write-AugmentLog -Message "$Action - $Details" -Level "INFO" -Category "AUDIT"
+    } else {
+        # Fallback for when unified logger not available
+        $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+        Write-Host "[$timestamp] [AUDIT] $Action - $Details" -ForegroundColor Magenta
+    }
 }
 
 # Initialize logging
@@ -130,12 +97,38 @@ function Initialize-Logging {
     if (-not (Test-Path $logDir)) {
         New-Item -ItemType Directory -Path $logDir -Force | Out-Null
     }
-    
-    $timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
-    $script:LogFile = "$logDir/${SCRIPT_NAME}_${timestamp}.log"
-    $script:AuditLogFile = "$logDir/${SCRIPT_NAME}_audit_${timestamp}.log"
-    
+
+    # Initialize unified logging system if available
+    if ($script:UnifiedLoggerLoaded) {
+        try {
+            $timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
+            $logFileName = "${SCRIPT_NAME}_${timestamp}.log"
+
+            if (Initialize-AugmentLogger -LogDirectory $logDir -LogFileName $logFileName) {
+                Write-LogInfo "Unified logging system initialized for Windows platform"
+                $script:LogFile = Join-Path $logDir $logFileName
+                $script:AuditLogFile = Join-Path $logDir "${SCRIPT_NAME}_audit_${timestamp}.log"
+            } else {
+                # Fallback to simple logging
+                $script:LogFile = "$logDir/${SCRIPT_NAME}_${timestamp}.log"
+                $script:AuditLogFile = "$logDir/${SCRIPT_NAME}_audit_${timestamp}.log"
+            }
+        } catch {
+            Write-Host "Exception initializing unified logger: $($_.Exception.Message)" -ForegroundColor Yellow
+            # Fallback to simple logging
+            $timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
+            $script:LogFile = "$logDir/${SCRIPT_NAME}_${timestamp}.log"
+            $script:AuditLogFile = "$logDir/${SCRIPT_NAME}_audit_${timestamp}.log"
+        }
+    } else {
+        # Fallback logging setup
+        $timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
+        $script:LogFile = "$logDir/${SCRIPT_NAME}_${timestamp}.log"
+        $script:AuditLogFile = "$logDir/${SCRIPT_NAME}_audit_${timestamp}.log"
+    }
+
     Write-LogInfo "Windows platform implementation initialized"
+    Write-LogInfo "Unified logger loaded: $script:UnifiedLoggerLoaded"
     Write-AuditLog "INIT" "Windows platform implementation started"
 }
 
@@ -571,9 +564,9 @@ function Install-Chocolatey {
     }
 }
 
-# Enhanced VS Code path discovery for real environment detection
+# Enhanced VS Code and Cursor path discovery for real environment detection
 function Get-VSCodePaths {
-    Write-LogInfo "Discovering VS Code installations (real environment detection)..."
+    Write-LogInfo "Discovering VS Code and Cursor installations (real environment detection)..."
 
     $paths = @{}
 
@@ -607,16 +600,23 @@ function Get-VSCodePaths {
                 $items = Get-ItemProperty $regPath -ErrorAction SilentlyContinue | Where-Object {
                     $_.DisplayName -like "*Visual Studio Code*" -or
                     $_.DisplayName -like "*VS Code*" -or
+                    $_.DisplayName -like "*Cursor*" -or
                     $_.Publisher -like "*Microsoft Corporation*" -and $_.DisplayName -like "*Code*"
                 }
 
                 foreach ($item in $items) {
                     if ($item.InstallLocation -and (Test-Path $item.InstallLocation)) {
-                        $userDataPath = Join-Path $appData "Code"
+                        # Determine user data path based on application type
+                        $userDataPath = if ($item.DisplayName -like "*Cursor*") {
+                            Join-Path $appData "Cursor"
+                        } else {
+                            Join-Path $appData "Code"
+                        }
+
                         if (Test-Path $userDataPath) {
                             $key = "Registry-$($item.DisplayName -replace '[^a-zA-Z0-9]', '')"
                             $paths[$key] = $userDataPath
-                            Write-LogInfo "Found VS Code via registry: $($item.DisplayName) -> $userDataPath"
+                            Write-LogInfo "Found installation via registry: $($item.DisplayName) -> $userDataPath"
                         }
                     }
                 }
@@ -628,7 +628,7 @@ function Get-VSCodePaths {
         Write-LogWarning "Registry discovery failed: $($_.Exception.Message)"
     }
 
-    # 2. Standard user data paths (with deduplication)
+    # 2. Standard user data paths (with deduplication) - including Cursor
     Write-LogInfo "Scanning standard user data paths..."
     $standardPaths = @(
         @{ Path = "$appData\Code"; Type = "Stable" },
@@ -637,7 +637,9 @@ function Get-VSCodePaths {
         @{ Path = "$localAppData\Code - Insiders"; Type = "Insiders-Local" },
         @{ Path = "$appData\Code - Exploration"; Type = "Exploration" },
         @{ Path = "$appData\VSCodium"; Type = "VSCodium" },
-        @{ Path = "$localAppData\VSCodium"; Type = "VSCodium-Local" }
+        @{ Path = "$localAppData\VSCodium"; Type = "VSCodium-Local" },
+        @{ Path = "$appData\Cursor"; Type = "Cursor" },
+        @{ Path = "$localAppData\Cursor"; Type = "Cursor-Local" }
     )
 
     foreach ($pathInfo in $standardPaths) {
@@ -656,7 +658,7 @@ function Get-VSCodePaths {
 
             if (-not $isDuplicate) {
                 $paths[$pathInfo.Type] = $pathInfo.Path
-                Write-LogInfo "Found VS Code installation: $($pathInfo.Type) -> $($pathInfo.Path)"
+                Write-LogInfo "Found installation: $($pathInfo.Type) -> $($pathInfo.Path)"
             }
         }
     }
@@ -704,8 +706,8 @@ function Get-VSCodePaths {
         }
     }
 
-    Write-LogSuccess "VS Code discovery completed. Found $($paths.Count) installations"
-    Write-AuditLog "VSCODE_DISCOVERY" "VS Code paths discovered: $($paths.Count) installations - $($paths.Keys -join ', ')"
+    Write-LogSuccess "VS Code and Cursor discovery completed. Found $($paths.Count) installations"
+    Write-AuditLog "VSCODE_DISCOVERY" "VS Code and Cursor paths discovered: $($paths.Count) installations - $($paths.Keys -join ', ')"
     return $paths
 }
 
@@ -982,6 +984,7 @@ DELETE FROM ItemTable WHERE
             if ($DryRun) {
                 $countQuery = @"
 SELECT COUNT(*) FROM ItemTable WHERE
+    /* Enhanced Augment-related entries */
     key LIKE '%augment%' OR
     key LIKE '%Augment%' OR
     key LIKE '%AUGMENT%' OR
@@ -990,13 +993,37 @@ SELECT COUNT(*) FROM ItemTable WHERE
     key LIKE '%augment-chat%' OR
     key LIKE '%augment-panel%' OR
     key LIKE '%vscode-augment%' OR
+    key = 'Augment.vscode-augment' OR
+    key LIKE '%actionSystemStates%' OR
+    key LIKE '%workspaceMessageStates%' OR
+    key LIKE '%sidecar.agent.%' OR
+    key LIKE '%agentAutoModeApproved%' OR
+    key LIKE '%lastEnabledExtensionVersion%' OR
+
+    /* CRITICAL: Encrypted session data */
+    key LIKE 'secret://%augment%' OR
+    key LIKE 'secret://%vscode-augment%' OR
+    key LIKE 'secret://%sessions%' OR
+    key LIKE '%augment.sessions%' OR
+    key LIKE '%extensionId%augment%' OR
+
+    /* Enhanced telemetry entries */
     key LIKE '%telemetry%' OR
     key LIKE '%machineId%' OR
     key LIKE '%deviceId%' OR
     key LIKE '%sqmId%' OR
     key LIKE '%machine-id%' OR
     key LIKE '%device-id%' OR
-    key LIKE '%sqm-id%';
+    key LIKE '%sqm-id%' OR
+    key = 'telemetry.firstSessionDate' OR
+    key = 'telemetry.lastSessionDate' OR
+    key = 'telemetry.currentSessionDate' OR
+    key LIKE '%firstSessionDate%' OR
+    key LIKE '%lastSessionDate%' OR
+    key LIKE '%currentSessionDate%' OR
+    key = 'storage.serviceMachineId' OR
+    key LIKE '%serviceMachineId%' OR
+    key = 'workbench.telemetryOptOutShown';
 "@
                 $count = sqlite3 $dbFile $countQuery
                 Write-LogInfo "DRY RUN: Would remove $count entries from $dbFile"
@@ -1444,6 +1471,39 @@ function Invoke-AccountLogoutCleanup {
             } else {
                 Write-LogInfo "DRY RUN: Would delete $($item.FullName)"
                 $result.AugmentFilesDeleted++
+            }
+        }
+
+        # Clean up empty Augment directories after processing
+        if (-not $DryRun) {
+            Write-LogInfo "Cleaning up empty Augment directories..."
+            foreach ($basePath in $VSCodePaths.Values) {
+                $emptyDirPatterns = @(
+                    "User\globalStorage\augment.*",
+                    "User\globalStorage\*augment*",
+                    "User\workspaceStorage\*\augment.*",
+                    "User\workspaceStorage\*\Augment.*"
+                )
+
+                foreach ($pattern in $emptyDirPatterns) {
+                    $fullPath = Join-Path $basePath $pattern
+                    try {
+                        $emptyDirs = Get-ChildItem -Path $fullPath -Directory -ErrorAction SilentlyContinue |
+                                   Where-Object { (Get-ChildItem $_.FullName -ErrorAction SilentlyContinue).Count -eq 0 }
+
+                        foreach ($emptyDir in $emptyDirs) {
+                            try {
+                                Remove-Item $emptyDir.FullName -Force -ErrorAction Stop
+                                Write-LogInfo "Removed empty Augment directory: $($emptyDir.FullName)"
+                                $result.AugmentFilesDeleted++
+                            } catch {
+                                Write-LogWarning "Failed to remove empty directory: $($emptyDir.FullName)"
+                            }
+                        }
+                    } catch {
+                        # Ignore errors when scanning for empty directories
+                    }
+                }
             }
         }
 
