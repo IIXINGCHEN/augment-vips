@@ -242,6 +242,13 @@ $loggingBootstrapPath = Join-Path $script:PROJECT_ROOT "src\core\logging\logging
 if (Test-Path $loggingBootstrapPath) {
     . $loggingBootstrapPath
     Ensure-LoggingAvailable -ScriptName "Installer"
+} else {
+    # Fallback logging functions for remote execution
+    function Write-LogInfo { param([string]$Message) Write-Host "[INFO] $Message" -ForegroundColor White }
+    function Write-LogSuccess { param([string]$Message) Write-Host "[SUCCESS] $Message" -ForegroundColor Green }
+    function Write-LogWarning { param([string]$Message) Write-Host "[WARNING] $Message" -ForegroundColor Yellow }
+    function Write-LogError { param([string]$Message) Write-Host "[ERROR] $Message" -ForegroundColor Red }
+    function Write-LogDebug { param([string]$Message) if ($VerboseOutput) { Write-Host "[DEBUG] $Message" -ForegroundColor Gray } }
 }
 
 # Load unified configuration (with fallback for remote execution)
