@@ -36,8 +36,28 @@ if ($Operation -eq "--version") {
 $SCRIPT_VERSION = "2.0.0"
 $SCRIPT_NAME = "augment-vip-installer"
 
-# Initialize PROJECT_ROOT early for configuration loading
-$script:PROJECT_ROOT = Split-Path -Parent $MyInvocation.MyCommand.Path
+# Initialize PROJECT_ROOT early for configuration loading (handle remote execution)
+$script:PROJECT_ROOT = $null
+try {
+    $scriptPath = $MyInvocation.MyCommand.Path
+    if (-not [string]::IsNullOrEmpty($scriptPath)) {
+        $script:PROJECT_ROOT = Split-Path -Parent $scriptPath
+    } else {
+        # Handle remote execution - try alternative methods
+        $scriptPath = $PSCommandPath
+        if (-not [string]::IsNullOrEmpty($scriptPath)) {
+            $script:PROJECT_ROOT = Split-Path -Parent $scriptPath
+        } else {
+            # For remote execution, use current directory as fallback
+            $script:PROJECT_ROOT = Get-Location
+            Write-Host "⚠ Remote execution detected - using current directory as PROJECT_ROOT" -ForegroundColor Yellow
+        }
+    }
+} catch {
+    # Final fallback for any errors
+    $script:PROJECT_ROOT = Get-Location
+    Write-Host "⚠ Could not determine script path - using current directory as PROJECT_ROOT" -ForegroundColor Yellow
+}
 
 # Set error handling and execution policy
 $ErrorActionPreference = "Stop"
@@ -48,17 +68,23 @@ $script:UseUnifiedConfig = $false
 $script:ConfigLoadError = $null
 
 try {
-    $configLoaderPath = Join-Path $PROJECT_ROOT "src\core\ConfigLoader.ps1"
-    if (Test-Path $configLoaderPath) {
-        . $configLoaderPath
-        if (Load-AugmentConfig) {
-            $script:UseUnifiedConfig = $true
-            Write-Host "✓ Unified configuration loaded successfully" -ForegroundColor Green
-        } else {
-            $script:ConfigLoadError = "Configuration validation failed"
-        }
+    # Skip configuration loading for remote execution
+    if (Test-RemoteExecution) {
+        $script:ConfigLoadError = "Remote execution mode - using embedded configuration"
+        Write-Host "⚠ Remote execution detected - using embedded configuration patterns" -ForegroundColor Yellow
     } else {
-        $script:ConfigLoadError = "ConfigLoader.ps1 not found"
+        $configLoaderPath = Join-Path $PROJECT_ROOT "src\core\ConfigLoader.ps1"
+        if (Test-Path $configLoaderPath) {
+            . $configLoaderPath
+            if (Load-AugmentConfig) {
+                $script:UseUnifiedConfig = $true
+                Write-Host "✓ Unified configuration loaded successfully" -ForegroundColor Green
+            } else {
+                $script:ConfigLoadError = "Configuration validation failed"
+            }
+        } else {
+            $script:ConfigLoadError = "ConfigLoader.ps1 not found"
+        }
     }
 } catch {
     $script:ConfigLoadError = $_.Exception.Message
@@ -68,16 +94,22 @@ if (-not $script:UseUnifiedConfig) {
     Write-Host "⚠ Using embedded configuration patterns (Reason: $ConfigLoadError)" -ForegroundColor Yellow
 }
 
-# Load process management module
+# Load process management module (handle remote execution)
 $script:ProcessManagerLoaded = $false
 try {
-    $processManagerPath = Join-Path $PROJECT_ROOT "src\core\ProcessManager.ps1"
-    if (Test-Path $processManagerPath) {
-        . $processManagerPath
-        $script:ProcessManagerLoaded = $true
-        Write-Host "✓ Process management module loaded successfully" -ForegroundColor Green
+    # Check if we're in remote execution mode
+    if (Test-RemoteExecution) {
+        Write-Host "⚠ Remote execution detected - process management module not available" -ForegroundColor Yellow
+        Write-Host "  Process detection will be skipped in remote execution mode" -ForegroundColor Gray
     } else {
-        Write-Host "⚠ Process management module not found" -ForegroundColor Yellow
+        $processManagerPath = Join-Path $PROJECT_ROOT "src\core\ProcessManager.ps1"
+        if (Test-Path $processManagerPath) {
+            . $processManagerPath
+            $script:ProcessManagerLoaded = $true
+            Write-Host "✓ Process management module loaded successfully" -ForegroundColor Green
+        } else {
+            Write-Host "⚠ Process management module not found" -ForegroundColor Yellow
+        }
     }
 } catch {
     Write-Host "⚠ Failed to load process management module: $($_.Exception.Message)" -ForegroundColor Yellow
@@ -148,6 +180,28 @@ function Write-AuditLog {
 
 # Repository information (updated for new architecture)
 $REPO_URL = "https://gh.imixc.top/raw.githubusercontent.com/IIXINGCHEN/augment-vips/main"
+
+# Remote execution detection
+function Test-RemoteExecution {
+    # Check if script was executed via irm | iex or similar
+    $scriptPath = $MyInvocation.MyCommand.Path
+    if ([string]::IsNullOrEmpty($scriptPath)) {
+        return $true
+    }
+
+    # Check if we're running from a temporary location
+    if ($scriptPath -like "*\Temp\*" -or $scriptPath -like "*\tmp\*") {
+        return $true
+    }
+
+    # Check if PROJECT_ROOT doesn't contain expected structure
+    $srcDir = Join-Path $script:PROJECT_ROOT "src"
+    if (-not (Test-Path $srcDir)) {
+        return $true
+    }
+
+    return $false
+}
 
 # Platform validation functions
 function Test-WindowsPlatform {
