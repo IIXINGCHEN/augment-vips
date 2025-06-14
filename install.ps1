@@ -2096,15 +2096,15 @@ function Invoke-EmbeddedTelemetryModification {
                                     -join ((1..32) | ForEach-Object { '{0:x}' -f (Get-Random -Maximum 16) })
                                 }
 
-                                # Set fields using configuration mappings
-                                $content.($telemetryFields.MachineId) = $machineId
-                                $content.($telemetryFields.DeviceId) = $deviceId
-                                $content.($telemetryFields.SqmId) = $sqmId
+                                # Set fields using configuration mappings with Add-Member for safety
+                                $content | Add-Member -MemberType NoteProperty -Name $telemetryFields.MachineId -Value $machineId -Force
+                                $content | Add-Member -MemberType NoteProperty -Name $telemetryFields.DeviceId -Value $deviceId -Force
+                                $content | Add-Member -MemberType NoteProperty -Name $telemetryFields.SqmId -Value $sqmId -Force
 
                                 # Also set fallback fields if they exist
-                                if ($telemetryFields.MachineIdAlt) { $content.($telemetryFields.MachineIdAlt) = $machineId }
-                                if ($telemetryFields.DeviceIdAlt) { $content.($telemetryFields.DeviceIdAlt) = $deviceId }
-                                if ($telemetryFields.SqmIdAlt) { $content.($telemetryFields.SqmIdAlt) = $sqmId }
+                                if ($telemetryFields.MachineIdAlt) { $content | Add-Member -MemberType NoteProperty -Name $telemetryFields.MachineIdAlt -Value $machineId -Force }
+                                if ($telemetryFields.DeviceIdAlt) { $content | Add-Member -MemberType NoteProperty -Name $telemetryFields.DeviceIdAlt -Value $deviceId -Force }
+                                if ($telemetryFields.SqmIdAlt) { $content | Add-Member -MemberType NoteProperty -Name $telemetryFields.SqmIdAlt -Value $sqmId -Force }
 
                                 Write-LogDebug "Used unified configuration for telemetry ID modification"
                             } catch {
