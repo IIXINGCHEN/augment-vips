@@ -74,19 +74,63 @@ $script:ModificationLog = @{
     }
 }
 
-# Logging functions - use unified logging or fallback
+# Comparison cache to avoid duplicate comparisons
+$script:ComparisonCache = @{}
+
+# Error message deduplication to avoid showing same errors multiple times
+$script:ReportedErrors = @{}
+
+# Logging functions - use unified logging or fallback with consistent formatting
 if (-not (Get-Command Write-LogInfo -ErrorAction SilentlyContinue)) {
-    function Write-LogInfo($msg) { Write-Host "[INFO] $msg" -ForegroundColor Green }
-    function Write-LogWarning($msg) { Write-Host "[WARN] $msg" -ForegroundColor Yellow }
-    function Write-LogError($msg) { Write-Host "[ERROR] $msg" -ForegroundColor Red }
-    function Write-LogSuccess($msg) { Write-Host "[SUCCESS] $msg" -ForegroundColor Cyan }
+    function Write-LogInfo($msg) {
+        $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+        Write-Host "[$timestamp] [INFO] $msg" -ForegroundColor Green
+    }
+    function Write-LogWarning($msg) {
+        $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+        Write-Host "[$timestamp] [WARNING] $msg" -ForegroundColor Yellow
+    }
+    function Write-LogError($msg) {
+        $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+        Write-Host "[$timestamp] [ERROR] $msg" -ForegroundColor Red
+    }
+    function Write-LogSuccess($msg) {
+        $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+        Write-Host "[$timestamp] [SUCCESS] $msg" -ForegroundColor Cyan
+    }
 }
 
-# Compatibility aliases for existing code
-function Write-Info($msg) { Write-LogInfo $msg }
-function Write-Warn($msg) { Write-LogWarning $msg }
-function Write-Error($msg) { Write-LogError $msg }
-function Write-Success($msg) { Write-LogSuccess $msg }
+# Compatibility aliases for existing code - avoid double logging by using direct output
+function Write-Info($msg) {
+    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+    Write-Host "[$timestamp] [INFO] $msg" -ForegroundColor Green
+}
+function Write-Warn($msg) {
+    # Deduplicate warning messages to avoid showing the same warning multiple times
+    $warnKey = $msg.GetHashCode().ToString()
+    if ($script:ReportedErrors.ContainsKey($warnKey)) {
+        return  # Skip duplicate warning
+    }
+    $script:ReportedErrors[$warnKey] = $true
+
+    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+    Write-Host "[$timestamp] [WARNING] $msg" -ForegroundColor Yellow
+}
+function Write-Error($msg) {
+    # Deduplicate error messages to avoid showing the same error multiple times
+    $errorKey = $msg.GetHashCode().ToString()
+    if ($script:ReportedErrors.ContainsKey($errorKey)) {
+        return  # Skip duplicate error
+    }
+    $script:ReportedErrors[$errorKey] = $true
+
+    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+    Write-Host "[$timestamp] [ERROR] $msg" -ForegroundColor Red
+}
+function Write-Success($msg) {
+    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+    Write-Host "[$timestamp] [SUCCESS] $msg" -ForegroundColor Cyan
+}
 
 # Null-safe SQLite query function to prevent "cannot call method on null value" errors
 function Invoke-SafeSQLiteQuery {
@@ -394,11 +438,33 @@ function Compare-TelemetryData {
         [hashtable]$DatabaseData,
         [hashtable]$ConfigData,
         [string]$DatabasePath,
-        [string]$ConfigPath
+        [string]$ConfigPath,
+        [bool]$SuppressOutput = $false
     )
-    
-    Write-Info "Comparing telemetry data between database and config..."
+
+    # Create globally unique cache key to avoid duplicate comparisons
+    # Include full paths, data content hashes, and key counts for uniqueness
+    $dbDataHash = if ($DatabaseData -and $DatabaseData.Keys.Count -gt 0) {
+        $dbString = ($DatabaseData.Keys | Sort-Object | ForEach-Object { "$_=$($DatabaseData[$_])" }) -join "|"
+        if ($dbString) { $dbString.GetHashCode() } else { 0 }
+    } else { 0 }
+    $configDataHash = if ($ConfigData -and $ConfigData.Keys.Count -gt 0) {
+        $configString = ($ConfigData.Keys | Sort-Object | ForEach-Object { "$_=$($ConfigData[$_])" }) -join "|"
+        if ($configString) { $configString.GetHashCode() } else { 0 }
+    } else { 0 }
+    $dbPath = if ($DatabasePath) { $DatabasePath.Replace('\','/') } else { "null" }
+    $configPath = if ($ConfigPath) { $ConfigPath.Replace('\','/') } else { "null" }
+    $cacheKey = "$dbPath|$configPath|$dbDataHash|$configDataHash|$($DatabaseData.Keys.Count)|$($ConfigData.Keys.Count)"
+
+    if ($script:ComparisonCache.ContainsKey($cacheKey)) {
+        if ($VerboseOutput) {
+            Write-Info "Using cached comparison result for: $(Split-Path $DatabasePath -Leaf) vs $(Split-Path $ConfigPath -Leaf)"
+        }
+        return $script:ComparisonCache[$cacheKey]
+    }
+
     if ($VerboseOutput) {
+        Write-Info "Comparing telemetry data between database and config..."
         Write-Info "Database: $DatabasePath"
         Write-Info "Config: $ConfigPath"
     }
@@ -437,7 +503,9 @@ function Compare-TelemetryData {
                     Status = "Identical"
                 }
                 $comparison.Summary.ConsistentKeys++
-                Write-Success "  [OK] $key : CONSISTENT"
+                if ($VerboseOutput) {
+                    Write-Success "  $key : CONSISTENT"
+                }
             } else {
                 # Special case for timestamp format differences (expected)
                 if ($key -like '*Date*' -and $key -like '*telemetry*') {
@@ -450,7 +518,9 @@ function Compare-TelemetryData {
                             Status = "Time point consistent (format difference expected)"
                         }
                         $comparison.Summary.ConsistentKeys++
-                        Write-Success "  [OK] $key : TIME CONSISTENT (format difference expected)"
+                        if ($VerboseOutput) {
+                            Write-Success "  $key : TIME CONSISTENT (format difference expected)"
+                        }
                     } else {
                         $comparison.Inconsistent[$key] = @{
                             DatabaseValue = $dbValue
@@ -458,7 +528,9 @@ function Compare-TelemetryData {
                             Status = "Time point inconsistent"
                         }
                         $comparison.Summary.InconsistentKeys++
-                        Write-Error "  [ERROR] $key : TIME INCONSISTENT"
+                        if (-not $SuppressOutput) {
+                            Write-Error "  $key : TIME INCONSISTENT"
+                        }
                     }
                 } else {
                     $comparison.Inconsistent[$key] = @{
@@ -467,22 +539,48 @@ function Compare-TelemetryData {
                         Status = "Value mismatch"
                     }
                     $comparison.Summary.InconsistentKeys++
-                    Write-Error "  [ERROR] $key : INCONSISTENT"
-                    Write-Error "    Database: $dbValue"
-                    Write-Error "    Config: $configValue"
+                    if (-not $SuppressOutput) {
+                        Write-Error "  $key : INCONSISTENT"
+                        Write-Error "    Database: $dbValue"
+                        Write-Error "    Config: $configValue"
+                    }
                 }
             }
         } elseif ($dbValue -and -not $configValue) {
             $comparison.DatabaseOnly[$key] = $dbValue
             $comparison.Summary.DatabaseOnlyKeys++
-            Write-Warn "  [WARN] $key : DATABASE ONLY"
+            if (-not $SuppressOutput) {
+                Write-Warn "  $key : DATABASE ONLY"
+            }
         } elseif (-not $dbValue -and $configValue) {
             $comparison.ConfigOnly[$key] = $configValue
             $comparison.Summary.ConfigOnlyKeys++
-            Write-Warn "  [WARN] $key : CONFIG ONLY"
+            if (-not $SuppressOutput) {
+                Write-Warn "  $key : CONFIG ONLY"
+            }
         }
     }
-    
+
+    # Add auto-fix suggestions if inconsistencies found
+    if ($comparison.Summary.InconsistentKeys -gt 0 -or $comparison.Summary.DatabaseOnlyKeys -gt 0 -or $comparison.Summary.ConfigOnlyKeys -gt 0) {
+        $comparison.AutoFixSuggestion = @{
+            CanAutoFix = $true
+            FixMethod = "SYNC_TELEMETRY_IDS"
+            Description = "Generate new unified telemetry IDs and sync across all files"
+            RequiredAction = "Run with -Operation sync-ids to automatically fix inconsistencies"
+        }
+    } else {
+        $comparison.AutoFixSuggestion = @{
+            CanAutoFix = $false
+            FixMethod = "NONE"
+            Description = "No inconsistencies detected"
+            RequiredAction = "None"
+        }
+    }
+
+    # Cache the comparison result to avoid duplicate comparisons
+    $script:ComparisonCache[$cacheKey] = $comparison
+
     return $comparison
 }
 
@@ -491,6 +589,14 @@ function Invoke-DeepConsistencyCheck {
 
     Write-Info "Starting Deep Consistency Check..."
     Write-Info "Checking all VS Code and Cursor installations for telemetry data consistency"
+
+    # Global aggregated results to avoid duplicate reporting
+    $globalAggregatedResults = @{
+        AllInconsistencies = @{}
+        AllDatabaseOnly = @{}
+        AllConfigOnly = @{}
+        ReportedKeys = @{}
+    }
 
     $globalReport = @{
         Installations = @()
@@ -541,8 +647,35 @@ function Invoke-DeepConsistencyCheck {
         foreach ($db in $installationReport.Databases) {
             foreach ($config in $installationReport.Configs) {
                 if ($config.KeyCount -gt 0) {  # Only compare non-empty configs
-                    Write-Info "Comparing database and config files..."
-                    $comparison = Compare-TelemetryData -DatabaseData $db.Data -ConfigData $config.Data -DatabasePath $db.Path -ConfigPath $config.Path
+                    # Only show comparison message in verbose mode to reduce output
+                    if ($VerboseOutput) {
+                        Write-Info "Comparing database and config files..."
+                    }
+
+                    # Suppress output during comparison to aggregate results
+                    $comparison = Compare-TelemetryData -DatabaseData $db.Data -ConfigData $config.Data -DatabasePath $db.Path -ConfigPath $config.Path -SuppressOutput $true
+
+                    # Aggregate results globally to avoid duplicate reporting
+                    foreach ($key in $comparison.Inconsistent.Keys) {
+                        if (-not $globalAggregatedResults.ReportedKeys.ContainsKey($key)) {
+                            $globalAggregatedResults.AllInconsistencies[$key] = $comparison.Inconsistent[$key]
+                            $globalAggregatedResults.ReportedKeys[$key] = $true
+                        }
+                    }
+
+                    foreach ($key in $comparison.DatabaseOnly.Keys) {
+                        if (-not $globalAggregatedResults.ReportedKeys.ContainsKey($key)) {
+                            $globalAggregatedResults.AllDatabaseOnly[$key] = $comparison.DatabaseOnly[$key]
+                            $globalAggregatedResults.ReportedKeys[$key] = $true
+                        }
+                    }
+
+                    foreach ($key in $comparison.ConfigOnly.Keys) {
+                        if (-not $globalAggregatedResults.ReportedKeys.ContainsKey($key)) {
+                            $globalAggregatedResults.AllConfigOnly[$key] = $comparison.ConfigOnly[$key]
+                            $globalAggregatedResults.ReportedKeys[$key] = $true
+                        }
+                    }
 
                     $installationReport.Comparisons += @{
                         DatabasePath = $db.Path
@@ -562,6 +695,22 @@ function Invoke-DeepConsistencyCheck {
         $globalReport.Installations += $installationReport
     }
 
+    # Now output the aggregated results (each key only once)
+    foreach ($key in $globalAggregatedResults.AllInconsistencies.Keys) {
+        $inconsistency = $globalAggregatedResults.AllInconsistencies[$key]
+        Write-Error "  $key : INCONSISTENT"
+        Write-Error "    Database: $($inconsistency.DatabaseValue)"
+        Write-Error "    Config: $($inconsistency.ConfigValue)"
+    }
+
+    foreach ($key in $globalAggregatedResults.AllDatabaseOnly.Keys) {
+        Write-Warn "  $key : DATABASE ONLY"
+    }
+
+    foreach ($key in $globalAggregatedResults.AllConfigOnly.Keys) {
+        Write-Warn "  $key : CONFIG ONLY"
+    }
+
     # Store report for later use
     $script:ConsistencyReport = $globalReport
 
@@ -573,10 +722,12 @@ function Invoke-DeepConsistencyCheck {
     Write-Info "Inconsistent database-config pairs: $($globalReport.Summary.InconsistentPairs)"
 
     if ($globalReport.Summary.InconsistentPairs -eq 0) {
-        Write-Success "[SUCCESS] ALL DATA IS CONSISTENT ACROSS ALL INSTALLATIONS!"
+        Write-Success "ALL DATA IS CONSISTENT ACROSS ALL INSTALLATIONS!"
         return $true
     } else {
-        Write-Error "[ERROR] INCONSISTENCIES DETECTED - FIXES NEEDED"
+        Write-Error "INCONSISTENCIES DETECTED - AUTOMATIC FIX AVAILABLE"
+        Write-Info "Found $($globalReport.Summary.InconsistentPairs) inconsistent pairs that can be automatically fixed"
+        Write-Info "To automatically fix these issues, run: .\Complete-Augment-Fix.ps1 -Operation sync-ids"
         return $false
     }
 }
@@ -1316,7 +1467,7 @@ function Test-IdConsistency {
 
     # Test Machine ID
     if ($ConfigIds.MachineId -ne $DatabaseIds.MachineId) {
-        Write-Error "[ERROR] Machine ID mismatch in $InstallationType"
+        Write-Error "Machine ID mismatch in $InstallationType"
         $consistent = $false
     } else {
         Write-Success "[OK] Machine ID consistent in $InstallationType"
@@ -1324,7 +1475,7 @@ function Test-IdConsistency {
 
     # Test Device ID
     if ($ConfigIds.DeviceId -ne $DatabaseIds.DeviceId) {
-        Write-Error "[ERROR] Device ID mismatch in $InstallationType"
+        Write-Error "Device ID mismatch in $InstallationType"
         $consistent = $false
     } else {
         Write-Success "[OK] Device ID consistent in $InstallationType"
@@ -1332,7 +1483,7 @@ function Test-IdConsistency {
 
     # Test SQM ID
     if ($ConfigIds.SqmId -ne $DatabaseIds.SqmId) {
-        Write-Error "[ERROR] SQM ID mismatch in $InstallationType"
+        Write-Error "SQM ID mismatch in $InstallationType"
         $consistent = $false
     } else {
         Write-Success "[OK] SQM ID consistent in $InstallationType"
@@ -1340,7 +1491,7 @@ function Test-IdConsistency {
 
     # Test Service ID (should match Device ID)
     if ($DatabaseIds.ServiceId -ne $DatabaseIds.DeviceId) {
-        Write-Error "[ERROR] Service ID not synced with Device ID in $InstallationType"
+        Write-Error "Service ID not synced with Device ID in $InstallationType"
         $consistent = $false
     } else {
         Write-Success "[OK] Service ID correctly synced in $InstallationType"
@@ -1603,7 +1754,7 @@ if ($overallSuccess) {
     Write-Info "IMPORTANT: Please restart VS Code and Cursor to apply all changes"
     Write-Info "The 'Your account has been restricted' error should now be resolved"
 } else {
-    Write-Error "[ERROR] SOME OPERATIONS FAILED OR INCONSISTENCIES REMAIN"
+    Write-Error "SOME OPERATIONS FAILED OR INCONSISTENCIES REMAIN"
     Write-Error "Please review the errors above and run the tool again if needed"
     Write-Error "You may need to run individual operations to resolve specific issues"
 }
