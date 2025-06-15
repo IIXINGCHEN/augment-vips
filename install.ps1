@@ -2238,16 +2238,24 @@ function Invoke-EmbeddedTelemetryModification {
                             } catch {
                                 Write-LogWarning "Failed to use unified config for telemetry, falling back: $($_.Exception.Message)"
                                 # Fallback to embedded approach using Add-Member for safety
-                                $content | Add-Member -MemberType NoteProperty -Name "telemetry.machineId" -Value (-join ((1..64) | ForEach-Object { '{0:x}' -f (Get-Random -Maximum 16) })) -Force
+                                # Generate cryptographically secure machine ID (64-character hex string)
+                                $machineIdBytes = New-Object byte[] 32
+                                [System.Security.Cryptography.RNGCryptoServiceProvider]::Create().GetBytes($machineIdBytes)
+                                $secureId = ($machineIdBytes | ForEach-Object { $_.ToString("x2") }) -join ""
+                                $content | Add-Member -MemberType NoteProperty -Name "telemetry.machineId" -Value $secureId -Force
                                 $content | Add-Member -MemberType NoteProperty -Name "telemetry.devDeviceId" -Value ([System.Guid]::NewGuid().ToString()) -Force
-                                $content | Add-Member -MemberType NoteProperty -Name "telemetry.sqmId" -Value ([System.Guid]::NewGuid().ToString()) -Force
+                                $content | Add-Member -MemberType NoteProperty -Name "telemetry.sqmId" -Value ([System.Guid]::NewGuid().ToString().ToUpper()) -Force
                             }
                         } else {
                             # Enhanced fallback approach with time stamp fields
                             # Use Add-Member to safely add properties that may not exist
-                            $content | Add-Member -MemberType NoteProperty -Name "telemetry.machineId" -Value (-join ((1..64) | ForEach-Object { '{0:x}' -f (Get-Random -Maximum 16) })) -Force
+                            # Generate cryptographically secure machine ID (64-character hex string)
+                            $machineIdBytes = New-Object byte[] 32
+                            [System.Security.Cryptography.RNGCryptoServiceProvider]::Create().GetBytes($machineIdBytes)
+                            $secureId = ($machineIdBytes | ForEach-Object { $_.ToString("x2") }) -join ""
+                            $content | Add-Member -MemberType NoteProperty -Name "telemetry.machineId" -Value $secureId -Force
                             $content | Add-Member -MemberType NoteProperty -Name "telemetry.devDeviceId" -Value ([System.Guid]::NewGuid().ToString()) -Force
-                            $content | Add-Member -MemberType NoteProperty -Name "telemetry.sqmId" -Value ([System.Guid]::NewGuid().ToString()) -Force
+                            $content | Add-Member -MemberType NoteProperty -Name "telemetry.sqmId" -Value ([System.Guid]::NewGuid().ToString().ToUpper()) -Force
 
                             # Reset session timestamps to break trial tracking
                             $currentTime = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()

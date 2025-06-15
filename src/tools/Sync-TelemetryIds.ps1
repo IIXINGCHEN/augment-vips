@@ -101,9 +101,9 @@ function New-SecureTelemetryIds {
         # Generate SQM ID (GUID with braces, uppercase)
         $sqmId = "{$([System.Guid]::NewGuid().ToString().ToUpper())}"
         
-        # Generate session timestamps
+        # Generate session timestamps - use current real time
         $currentTime = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
-        $firstSessionTime = $currentTime - (Get-Random -Minimum 86400000 -Maximum 2592000000) # 1-30 days ago
+        $firstSessionTime = $currentTime  # Use current time for all sessions
         
         $telemetryIds = @{
             MachineId = $machineId

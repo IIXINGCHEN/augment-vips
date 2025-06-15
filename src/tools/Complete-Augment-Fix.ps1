@@ -291,16 +291,19 @@ function Test-TimestampConsistency {
         [string]$DatabaseValue,
         [string]$ConfigValue
     )
-    
+
     try {
         # Database typically uses GMT string, config uses Unix timestamp
-        # Known reference: "Sun, 15 Jun 2025 02:45:58 GMT" = 1749955558265
-        
+        # Convert between formats to check if they represent the same time point
+
         if ($DatabaseValue -like "*GMT*" -and $ConfigValue -match '^\d+$') {
-            # This is the expected format difference
-            # For our specific case, check if config value is our target timestamp
-            $targetTimestamp = 1749955558265
-            if ([long]$ConfigValue -eq $targetTimestamp) {
+            # Convert config timestamp to GMT string and compare
+            $configTimestamp = [long]$ConfigValue
+            $configDateTime = [DateTimeOffset]::FromUnixTimeMilliseconds($configTimestamp).ToUniversalTime()
+            $configGMTString = $configDateTime.ToString("ddd, dd MMM yyyy HH:mm:ss 'GMT'", [System.Globalization.CultureInfo]::InvariantCulture)
+
+            # Compare the GMT strings
+            if ($DatabaseValue.Trim() -eq $configGMTString.Trim()) {
                 return $true
             }
         }
@@ -505,18 +508,25 @@ function Invoke-DeepConsistencyCheck {
 function New-UnifiedTelemetryIDs {
     Write-Info "Generating new unified telemetry IDs..."
 
-    # Generate cryptographically secure IDs
-    $machineId = [System.Security.Cryptography.SHA256]::Create().ComputeHash([System.Text.Encoding]::UTF8.GetBytes([System.Guid]::NewGuid().ToString() + (Get-Date).Ticks)) | ForEach-Object { $_.ToString("x2") } | Join-String
+    # Generate cryptographically secure IDs - Compatible with older PowerShell
+    $machineId = ([System.Security.Cryptography.SHA256]::Create().ComputeHash([System.Text.Encoding]::UTF8.GetBytes([System.Guid]::NewGuid().ToString() + (Get-Date).Ticks)) | ForEach-Object { $_.ToString("x2") }) -join ""
     $deviceId = [System.Guid]::NewGuid().ToString()
     $sqmId = [System.Guid]::NewGuid().ToString().ToUpper()
-    $timestamp = 1749955558265  # Use consistent reference timestamp
+
+    # Use current real time - actual execution timestamp
+    $currentTime = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
+    $timestamp = $currentTime
+
+    # Generate corresponding GMT string from current time
+    $dateTime = [DateTimeOffset]::UtcNow.ToUniversalTime()
+    $gmtString = $dateTime.ToString("ddd, dd MMM yyyy HH:mm:ss 'GMT'", [System.Globalization.CultureInfo]::InvariantCulture)
 
     $ids = @{
         MachineId = $machineId
         DeviceId = $deviceId
         SqmId = $sqmId
         Timestamp = $timestamp
-        GMTString = "Sun, 15 Jun 2025 02:45:58 GMT"  # Fixed English GMT string
+        GMTString = $gmtString
     }
 
     Write-Info "Generated unified IDs:"
@@ -775,8 +785,8 @@ function Invoke-TimestampFix {
         return $false
     }
 
-    # Use reference timestamp
-    $referenceTimestamp = 1749955558265
+    # Use current real time as reference timestamp
+    $referenceTimestamp = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
 
     # Process all config files
     foreach ($installation in $Installations) {
@@ -791,11 +801,14 @@ function Invoke-TimestampFix {
 
                 $content = Get-Content $configFile -Raw -Encoding UTF8 | ConvertFrom-Json
 
-                # Check if timestamps need updating
+                # Check if timestamps need updating (allow for small differences due to execution timing)
                 $needsUpdate = $false
-                if ($content.'telemetry.firstSessionDate' -ne $referenceTimestamp -or
-                    $content.'telemetry.lastSessionDate' -ne $referenceTimestamp -or
-                    $content.'telemetry.currentSessionDate' -ne $referenceTimestamp) {
+                $timeDifference = 300000  # 5 minutes tolerance in milliseconds
+
+                if ($content.'telemetry.firstSessionDate' -eq $null -or
+                    $content.'telemetry.lastSessionDate' -eq $null -or
+                    $content.'telemetry.currentSessionDate' -eq $null -or
+                    [Math]::Abs($content.'telemetry.firstSessionDate' - $referenceTimestamp) -gt $timeDifference) {
                     $needsUpdate = $true
                 }
 

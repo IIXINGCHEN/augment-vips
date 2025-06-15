@@ -124,7 +124,7 @@ function New-EnterpriseDeviceFingerprint {
         $sqmId = [System.Guid]::NewGuid().ToString()
         
         $currentTime = Get-Date
-        $firstTime = $currentTime.AddDays(-(Get-Random -Minimum 1 -Maximum 30))
+        $firstTime = $currentTime  # Use current time for all sessions
         
         $fingerprint = @{
             MachineId = $machineId
