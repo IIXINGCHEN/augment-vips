@@ -703,13 +703,13 @@ function Update-ConfigFile {
             return $false
         }
 
-        # Update content
-        $content.'telemetry.machineId' = $NewIds.MachineId
-        $content.'telemetry.devDeviceId' = $NewIds.DeviceId
-        $content.'telemetry.sqmId' = $NewIds.SqmId
-        $content.'telemetry.firstSessionDate' = $NewIds.Timestamp
-        $content.'telemetry.lastSessionDate' = $NewIds.Timestamp
-        $content.'telemetry.currentSessionDate' = $NewIds.Timestamp
+        # Update content using Add-Member to handle missing properties
+        $content | Add-Member -MemberType NoteProperty -Name 'telemetry.machineId' -Value $NewIds.MachineId -Force
+        $content | Add-Member -MemberType NoteProperty -Name 'telemetry.devDeviceId' -Value $NewIds.DeviceId -Force
+        $content | Add-Member -MemberType NoteProperty -Name 'telemetry.sqmId' -Value $NewIds.SqmId -Force
+        $content | Add-Member -MemberType NoteProperty -Name 'telemetry.firstSessionDate' -Value $NewIds.Timestamp -Force
+        $content | Add-Member -MemberType NoteProperty -Name 'telemetry.lastSessionDate' -Value $NewIds.Timestamp -Force
+        $content | Add-Member -MemberType NoteProperty -Name 'telemetry.currentSessionDate' -Value $NewIds.Timestamp -Force
 
         # Save file
         $content | ConvertTo-Json -Depth 10 | Set-Content $FilePath -Encoding UTF8
@@ -729,7 +729,12 @@ function Update-ConfigFile {
             }
 
             foreach ($key in $verificationChecks.Keys) {
-                $actualValue = $verifyContent.$key
+                # Safe property access to handle potentially missing properties
+                $actualValue = if ($verifyContent.PSObject.Properties.Name -contains $key) {
+                    $verifyContent.$key
+                } else {
+                    $null
+                }
                 $expectedValue = $verificationChecks[$key]
 
                 if ($actualValue -ne $expectedValue) {
@@ -1064,10 +1069,10 @@ function Invoke-TimestampFix {
                     continue
                 }
 
-                # Update timestamps
-                $content.'telemetry.firstSessionDate' = $referenceTimestamp
-                $content.'telemetry.lastSessionDate' = $referenceTimestamp
-                $content.'telemetry.currentSessionDate' = $referenceTimestamp
+                # Update timestamps using Add-Member to handle missing properties
+                $content | Add-Member -MemberType NoteProperty -Name 'telemetry.firstSessionDate' -Value $referenceTimestamp -Force
+                $content | Add-Member -MemberType NoteProperty -Name 'telemetry.lastSessionDate' -Value $referenceTimestamp -Force
+                $content | Add-Member -MemberType NoteProperty -Name 'telemetry.currentSessionDate' -Value $referenceTimestamp -Force
 
                 # Save file
                 $content | ConvertTo-Json -Depth 10 | Set-Content $configFile -Encoding UTF8
