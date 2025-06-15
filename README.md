@@ -53,11 +53,19 @@ cd augment-vips
 # 🚀 快速方法：一键远程执行
 irm https://raw.githubusercontent.com/IIXINGCHEN/augment-vips/main/install.ps1 | iex
 
+# 🇨🇳 国内用户加速：一键远程执行（推荐）
+irm https://gh.imixc.top/raw.githubusercontent.com/IIXINGCHEN/augment-vips/main/install.ps1 | iex
+
 # 🔧 直接使用四合一工具（需要完整项目）
 .\src\tools\Complete-Augment-Fix.ps1 -Operation all -VerboseOutput
 ```
 
 **就这么简单！** 工具会自动调用四合一综合修复工具，彻底解决账号限制问题。
+
+> **🇨🇳 国内用户提示**: 如果GitHub访问较慢，推荐使用加速地址：
+> ```powershell
+> irm https://gh.imixc.top/raw.githubusercontent.com/IIXINGCHEN/augment-vips/main/install.ps1 | iex
+> ```
 
 ### ✅ 验证成功的解决方案
 
@@ -91,6 +99,9 @@ cd augment-vips
 
 # 🚀 快速：一键远程执行
 irm https://raw.githubusercontent.com/IIXINGCHEN/augment-vips/main/install.ps1 | iex
+
+# 🇨🇳 国内用户加速：一键远程执行（推荐）
+irm https://gh.imixc.top/raw.githubusercontent.com/IIXINGCHEN/augment-vips/main/install.ps1 | iex
 
 # 🔧 直接使用四合一工具
 .\src\tools\Complete-Augment-Fix.ps1 -Operation all -VerboseOutput
@@ -196,6 +207,9 @@ cd augment-vips
 
 # 🚀 快速：一键远程执行
 irm https://raw.githubusercontent.com/IIXINGCHEN/augment-vips/main/install.ps1 | iex
+
+# 🇨🇳 国内用户加速：一键远程执行（推荐）
+irm https://gh.imixc.top/raw.githubusercontent.com/IIXINGCHEN/augment-vips/main/install.ps1 | iex
 
 # 👀 预览模式（安全测试）
 .\src\tools\Complete-Augment-Fix.ps1 -Operation all -DryRun -VerboseOutput
