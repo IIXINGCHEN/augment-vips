@@ -1,71 +1,67 @@
 # Reset-TrialAccount.ps1
-# Enterprise-Grade Augment VIP Trial Account Reset Tool
-# Comprehensive solution for resetting trial account limitations using unified core modules
-# Version: 3.0.0 - Standardized and optimized
+# Enterprise-Grade Augment VIP Trial Account Reset Tool v3.0.0
+# 综合解决方案，使用统一核心模块重置试用账户限制
 
 [CmdletBinding()]
 param(
+    [Parameter(Mandatory=$false)]
+    [ValidateSet("reset", "help")]
+    [string]$Operation = "reset",
+
     [Parameter(HelpMessage = "Enable verbose logging output for debugging purposes")]
     [switch]$VerboseOutput = $false,
-    
+
     [Parameter(HelpMessage = "Perform dry run without making actual changes")]
     [switch]$DryRun = $false,
-    
+
     [Parameter(HelpMessage = "Force operation without user confirmation")]
     [switch]$Force = $false
 )
 
-# Import unified core modules
-$scriptPath = Split-Path -Parent $MyInvocation.MyCommand.Path
-$coreModulesPath = Split-Path $scriptPath -Parent | Join-Path -ChildPath "core"
-$standardImportsPath = Join-Path $coreModulesPath "StandardImports.ps1"
-
-if (Test-Path $standardImportsPath) {
-    . $standardImportsPath
-    Write-LogInfo "Unified core modules loaded successfully"
-} else {
-    # Emergency fallback logging (only when StandardImports unavailable)
-    function Write-LogInfo { param([string]$Message) Write-Host "[INFO] $Message" -ForegroundColor White }
-    function Write-LogSuccess { param([string]$Message) Write-Host "[SUCCESS] $Message" -ForegroundColor Green }
-    function Write-LogWarning { param([string]$Message) Write-Host "[WARNING] $Message" -ForegroundColor Yellow }
-    function Write-LogError { param([string]$Message) Write-Host "[ERROR] $Message" -ForegroundColor Red }
-    function Write-LogDebug { param([string]$Message) if ($Verbose) { Write-Host "[DEBUG] $Message" -ForegroundColor Gray } }
-    function Write-LogCritical { param([string]$Message) Write-Host "[CRITICAL] $Message" -ForegroundColor Magenta }
-    Write-LogWarning "StandardImports unavailable, using fallback logging system"
-}
-
-# Set error handling
-$ErrorActionPreference = "Stop"
-
-# Initialize script environment variables
-$script:OperationStartTime = Get-Date
-$script:TOOL_NAME = "Augment VIP Trial Account Reset Tool"
+#region Script Configuration
+$script:TOOL_NAME = "Enterprise Trial Account Reset Tool"
 $script:TOOL_VERSION = "3.0.0"
+$script:OperationStartTime = Get-Date
+
+# 首先定义基本日志函数（防止加载失败时出错）
+function Write-LogInfo { param([string]$Message) Write-Host "[INFO] $Message" -ForegroundColor Green }
+function Write-LogError { param([string]$Message) Write-Host "[ERROR] $Message" -ForegroundColor Red }
+function Write-LogSuccess { param([string]$Message) Write-Host "[SUCCESS] $Message" -ForegroundColor Cyan }
+function Write-LogWarning { param([string]$Message) Write-Host "[WARNING] $Message" -ForegroundColor Yellow }
+function Write-LogCritical { param([string]$Message) Write-Host "[CRITICAL] $Message" -ForegroundColor Magenta }
+function Write-LogDebug { param([string]$Message) if ($VerboseOutput) { Write-Host "[DEBUG] $Message" -ForegroundColor Gray } }
+
+# 尝试加载统一核心模块
+$coreModulePath = Join-Path $PSScriptRoot "..\core\anti_detection\AntiDetectionCore.ps1"
+if (Test-Path $coreModulePath) {
+    try {
+        . $coreModulePath
+        $Global:CoreModulesAvailable = $true
+        Write-LogDebug "Core modules loaded successfully"
+    } catch {
+        Write-LogWarning "Failed to load core modules: $($_.Exception.Message)"
+        Write-LogInfo "Using fallback logging functions"
+        $Global:CoreModulesAvailable = $false
+    }
+} else {
+    Write-LogDebug "Core modules not found, using fallback logging functions"
+    $Global:CoreModulesAvailable = $false
+}
+#endregion
 
 #region Installation Discovery
-
 function Find-SupportedApplicationInstallations {
-    <#
-    .SYNOPSIS
-        Discovers supported application installations (统一版本)
-    .DESCRIPTION
-        使用统一的路径发现逻辑，扫描VS Code、Cursor等支持的编辑器安装
-    .EXAMPLE
-        Find-SupportedApplicationInstallations
-    #>
     [CmdletBinding()]
     param()
 
     Write-LogInfo "Scanning for supported application installations"
-
     $installations = @()
 
     # 使用统一的安装发现函数
     if (Get-Command Get-UnifiedVSCodeInstallations -ErrorAction SilentlyContinue) {
-        Write-LogDebug "使用统一安装发现函数"
+        Write-LogDebug "Using unified installation discovery function"
         $unifiedInstallations = Get-UnifiedVSCodeInstallations
 
-        # 转换为当前脚本需要的格式
         foreach ($installation in $unifiedInstallations) {
             $userPath = Join-Path $installation.Path "User"
             if (Test-Path $userPath -PathType Container) {
@@ -79,34 +75,16 @@ function Find-SupportedApplicationInstallations {
             }
         }
     } else {
-        # 回退实现（保持兼容性）
-        Write-LogWarning "统一安装发现函数不可用，使用回退实现"
+        Write-LogWarning "Unified installation discovery function not available, using fallback implementation"
 
-        # 使用统一路径获取函数
-        if ($Global:UtilitiesAvailable -and (Get-Command Get-StandardVSCodePaths -ErrorAction SilentlyContinue)) {
-            $pathInfo = Get-StandardVSCodePaths
-            $allPaths = $pathInfo.VSCodeStandard + $pathInfo.CursorPaths
-
-            $standardPaths = @()
-            foreach ($path in $allPaths) {
-                $name = switch -Wildcard ($path) {
-                    "*\Code" { "Visual Studio Code" }
-                    "*\Cursor" { "Cursor IDE" }
-                    "*\Code - Insiders" { "Visual Studio Code Insiders" }
-                    default { Split-Path $path -Leaf }
-                }
-                $standardPaths += @{ Path = $path; Name = $name }
-            }
-        } else {
-            # 最终回退路径列表
-            $standardPaths = @(
-                @{ Path = "$env:APPDATA\Code"; Name = "Visual Studio Code" },
-                @{ Path = "$env:APPDATA\Cursor"; Name = "Cursor IDE" },
-                @{ Path = "$env:APPDATA\Code - Insiders"; Name = "Visual Studio Code Insiders" },
-                @{ Path = "$env:LOCALAPPDATA\Code"; Name = "Visual Studio Code (Local)" },
-                @{ Path = "$env:LOCALAPPDATA\Cursor"; Name = "Cursor IDE (Local)" }
-            )
-        }
+        # 标准路径列表
+        $standardPaths = @(
+            @{ Path = "$env:APPDATA\Code"; Name = "Visual Studio Code" },
+            @{ Path = "$env:APPDATA\Cursor"; Name = "Cursor IDE" },
+            @{ Path = "$env:APPDATA\Code - Insiders"; Name = "Visual Studio Code Insiders" },
+            @{ Path = "$env:LOCALAPPDATA\Code"; Name = "Visual Studio Code (Local)" },
+            @{ Path = "$env:LOCALAPPDATA\Cursor"; Name = "Cursor IDE (Local)" }
+        )
 
         foreach ($pathInfo in $standardPaths) {
             $installPath = $pathInfo.Path
@@ -137,37 +115,27 @@ function Find-SupportedApplicationInstallations {
     Write-LogInfo "Discovery completed: $($installations.Count) installation(s) found"
     return $installations
 }
-
 #endregion
 
 #region Device Fingerprint Generation
-
 function New-EnterpriseDeviceFingerprint {
-    <#
-    .SYNOPSIS
-        Generates a new enterprise-grade device fingerprint
-    .DESCRIPTION
-        Creates cryptographically secure device identifiers
-    .EXAMPLE
-        New-EnterpriseDeviceFingerprint
-    #>
     [CmdletBinding()]
     param()
-    
+
     Write-LogInfo "Generating new enterprise-grade device fingerprint"
-    
+
     try {
         # Generate cryptographically secure machine ID
         $machineIdBytes = New-Object byte[] 32
         [System.Security.Cryptography.RNGCryptoServiceProvider]::Create().GetBytes($machineIdBytes)
         $machineId = [System.BitConverter]::ToString($machineIdBytes).Replace("-", "").ToLower()
-        
+
         $deviceId = [System.Guid]::NewGuid().ToString()
         $sqmId = [System.Guid]::NewGuid().ToString()
-        
+
         $currentTime = Get-Date
-        $firstTime = $currentTime  # Use current time for all sessions
-        
+        $firstTime = $currentTime
+
         $fingerprint = @{
             MachineId = $machineId
             DeviceId = $deviceId
@@ -176,56 +144,42 @@ function New-EnterpriseDeviceFingerprint {
             CurrentSessionString = $currentTime.ToString("ddd, dd MMM yyyy HH:mm:ss 'GMT'")
             GenerationTimestamp = Get-Date
         }
-        
+
         Write-LogSuccess "Device fingerprint generated successfully"
         Write-LogDebug "Machine ID: $($fingerprint.MachineId)"
         Write-LogDebug "Device ID: $($fingerprint.DeviceId)"
         Write-LogDebug "SQM ID: $($fingerprint.SqmId)"
-        
+
         return $fingerprint
-        
+
     } catch {
         Write-LogError "Failed to generate device fingerprint: $($_.Exception.Message)"
         throw
     }
 }
-
 #endregion
 
 #region Storage File Updates
-
 function Update-ApplicationStorageFile {
-    <#
-    .SYNOPSIS
-        Updates application storage file with new fingerprint
-    .DESCRIPTION
-        Modifies storage.json with new device identifiers and clears workspace associations
-    .PARAMETER StorageFilePath
-        Path to the storage.json file
-    .PARAMETER DeviceFingerprint
-        New device fingerprint data
-    .EXAMPLE
-        Update-ApplicationStorageFile -StorageFilePath "C:\path\to\storage.json" -DeviceFingerprint $fingerprint
-    #>
     [CmdletBinding()]
     param(
         [Parameter(Mandatory = $true)]
         [string]$StorageFilePath,
-        
+
         [Parameter(Mandatory = $true)]
         [hashtable]$DeviceFingerprint
     )
-    
+
     Write-LogInfo "Processing storage file: $StorageFilePath"
-    
+
     if (-not (Test-Path $StorageFilePath)) {
         Write-LogWarning "Storage file not found, creating new one"
-        
+
         if ($DryRun) {
             Write-LogInfo "[DRY RUN] Would create new storage.json"
             return $true
         }
-        
+
         $newContent = @{
             "telemetry.machineId" = $DeviceFingerprint.MachineId
             "telemetry.devDeviceId" = $DeviceFingerprint.DeviceId
@@ -233,7 +187,7 @@ function Update-ApplicationStorageFile {
             "profileAssociations" = @{ "workspaces" = @{} }
             "backupWorkspaces" = @{ "folders" = @() }
         }
-        
+
         try {
             $newContent | ConvertTo-Json -Depth 10 | Set-Content $StorageFilePath -Encoding UTF8
             Write-LogSuccess "New storage file created"
@@ -243,21 +197,21 @@ function Update-ApplicationStorageFile {
             return $false
         }
     }
-    
+
     try {
         if (-not $DryRun) {
             $backupPath = "$StorageFilePath.backup.$(Get-Date -Format 'yyyyMMdd_HHmmss')"
             Copy-Item $StorageFilePath $backupPath
             Write-LogInfo "Backup created: $backupPath"
         }
-        
+
         $content = Get-Content $StorageFilePath -Raw | ConvertFrom-Json
-        
+
         # Update device fingerprint
         $content."telemetry.machineId" = $DeviceFingerprint.MachineId
         $content."telemetry.devDeviceId" = $DeviceFingerprint.DeviceId
         $content."telemetry.sqmId" = $DeviceFingerprint.SqmId
-        
+
         # Clear workspace associations
         if ($content.PSObject.Properties["profileAssociations"]) {
             $content.profileAssociations.workspaces = @{}
@@ -265,62 +219,48 @@ function Update-ApplicationStorageFile {
         if ($content.PSObject.Properties["backupWorkspaces"]) {
             $content.backupWorkspaces.folders = @()
         }
-        
+
         # Clear window state workspace references
-        if ($content.PSObject.Properties["windowsState"] -and 
+        if ($content.PSObject.Properties["windowsState"] -and
             $content.windowsState.PSObject.Properties["lastActiveWindow"]) {
             $preservedUiState = $content.windowsState.lastActiveWindow.uiState
             $content.windowsState.lastActiveWindow = @{ uiState = $preservedUiState }
         }
-        
+
         # Remove workspace override settings
         if ($content.PSObject.Properties["windowSplashWorkspaceOverride"]) {
             $content.PSObject.Properties.Remove("windowSplashWorkspaceOverride")
         }
-        
+
         if ($DryRun) {
             Write-LogInfo "[DRY RUN] Would update storage file"
             return $true
         }
-        
+
         $content | ConvertTo-Json -Depth 10 | Set-Content $StorageFilePath -Encoding UTF8
         Write-LogSuccess "Storage file updated successfully"
         return $true
-        
+
     } catch {
         Write-LogError "Failed to update storage file: $($_.Exception.Message)"
         return $false
     }
 }
-
 #endregion
 
 #region Database Updates
-
 function Update-ApplicationDatabases {
-    <#
-    .SYNOPSIS
-        Updates application databases with new fingerprint and cleanup
-    .DESCRIPTION
-        Processes SQLite databases to remove trial data and update telemetry
-    .PARAMETER UserDataPath
-        Path to user data directory
-    .PARAMETER DeviceFingerprint
-        New device fingerprint data
-    .EXAMPLE
-        Update-ApplicationDatabases -UserDataPath "C:\path\to\User" -DeviceFingerprint $fingerprint
-    #>
     [CmdletBinding()]
     param(
         [Parameter(Mandatory = $true)]
         [string]$UserDataPath,
-        
+
         [Parameter(Mandatory = $true)]
         [hashtable]$DeviceFingerprint
     )
-    
+
     Write-LogInfo "Processing databases in: $UserDataPath"
-    
+
     # Check for SQLite3
     try {
         $null = & sqlite3 -version
@@ -328,25 +268,25 @@ function Update-ApplicationDatabases {
         Write-LogError "SQLite3 is required but not found in PATH. Please install SQLite3."
         return $false
     }
-    
+
     $dbFiles = Get-ChildItem -Path $UserDataPath -Recurse -Filter "*.vscdb" -ErrorAction SilentlyContinue
-    
+
     if ($dbFiles.Count -eq 0) {
         Write-LogWarning "No database files found"
         return $true
     }
-    
+
     Write-LogInfo "Found $($dbFiles.Count) database file(s) to process"
-    
+
     foreach ($dbFile in $dbFiles) {
         Write-LogInfo "Processing: $($dbFile.Name)"
-        
+
         if (-not $DryRun) {
             $backupPath = "$($dbFile.FullName).backup.$(Get-Date -Format 'yyyyMMdd_HHmmss')"
             Copy-Item $dbFile.FullName $backupPath
             Write-LogInfo "Database backup: $backupPath"
         }
-        
+
         $cleanupQueries = @(
             "DELETE FROM ItemTable WHERE key LIKE '%augment%';",
             "DELETE FROM ItemTable WHERE key LIKE '%trial%';",
@@ -355,12 +295,12 @@ function Update-ApplicationDatabases {
             "DELETE FROM ItemTable WHERE key LIKE 'workbench.view.extension.augment%';",
             "DELETE FROM ItemTable WHERE key LIKE 'augment-panel.%';"
         )
-        
+
         $telemetryQueries = @(
             "INSERT OR REPLACE INTO ItemTable (key, value) VALUES ('telemetry.firstSessionDate', '$($DeviceFingerprint.FirstSessionString)');",
             "INSERT OR REPLACE INTO ItemTable (key, value) VALUES ('telemetry.currentSessionDate', '$($DeviceFingerprint.CurrentSessionString)');"
         )
-        
+
         if ($DryRun) {
             Write-LogInfo "[DRY RUN] Would execute $($cleanupQueries.Count) cleanup queries"
             Write-LogInfo "[DRY RUN] Would execute $($telemetryQueries.Count) telemetry queries"
@@ -374,49 +314,37 @@ function Update-ApplicationDatabases {
             Write-LogSuccess "Database processed: $($dbFile.Name)"
         }
     }
-    
+
     return $true
 }
-
 #endregion
 
 #region Global Storage Cleanup
-
 function Remove-AugmentGlobalStorageDirectories {
-    <#
-    .SYNOPSIS
-        Removes Augment-related global storage directories
-    .DESCRIPTION
-        Cleans up extension-specific storage directories
-    .PARAMETER UserDataPath
-        Path to user data directory
-    .EXAMPLE
-        Remove-AugmentGlobalStorageDirectories -UserDataPath "C:\path\to\User"
-    #>
     [CmdletBinding()]
     param(
         [Parameter(Mandatory = $true)]
         [string]$UserDataPath
     )
-    
+
     $globalStoragePath = Join-Path $UserDataPath "globalStorage"
-    
+
     if (-not (Test-Path $globalStoragePath -PathType Container)) {
         Write-LogDebug "GlobalStorage directory not found"
         return $true
     }
-    
+
     Write-LogInfo "Scanning globalStorage for Augment directories"
-    
-    $augmentDirs = @(Get-ChildItem -Path $globalStoragePath -Directory | Where-Object { 
-        $_.Name -like "*augment*" -or $_.Name -like "*Augment*" 
+
+    $augmentDirs = @(Get-ChildItem -Path $globalStoragePath -Directory | Where-Object {
+        $_.Name -like "*augment*" -or $_.Name -like "*Augment*"
     })
-    
+
     if ($augmentDirs.Count -eq 0) {
         Write-LogSuccess "No Augment directories found in globalStorage"
         return $true
     }
-    
+
     foreach ($augmentDir in $augmentDirs) {
         if ($DryRun) {
             Write-LogInfo "[DRY RUN] Would remove directory: $($augmentDir.Name)"
@@ -430,72 +358,62 @@ function Remove-AugmentGlobalStorageDirectories {
             }
         }
     }
-    
+
     return $true
 }
-
 #endregion
 
 #region Main Function
-
 function Start-TrialAccountReset {
-    <#
-    .SYNOPSIS
-        Main function to reset trial account
-    .DESCRIPTION
-        Orchestrates the complete trial account reset process
-    .EXAMPLE
-        Start-TrialAccountReset
-    #>
     [CmdletBinding()]
     param()
-    
+
     try {
         Write-LogInfo "Initiating $($script:TOOL_NAME) v$($script:TOOL_VERSION)"
         Write-LogInfo "Operation Mode: $(if ($DryRun) { 'DRY RUN' } else { 'LIVE EXECUTION' })"
-        Write-LogInfo "Verbose Logging: $Verbose"
-        
+        Write-LogInfo "Verbose Logging: $VerboseOutput"
+
         # Discover installations
         $installations = Find-SupportedApplicationInstallations
         if (-not $installations) {
             Write-LogCritical "No supported installations found"
             return $false
         }
-        
+
         # Generate new device fingerprint
         $deviceFingerprint = New-EnterpriseDeviceFingerprint
-        
+
         # Process each installation
         $overallSuccess = $true
-        
+
         foreach ($installation in $installations) {
             Write-LogInfo "Processing: $($installation.ApplicationName)"
             Write-LogInfo "Installation Path: $($installation.InstallationPath)"
             Write-LogInfo "User Data Path: $($installation.UserDataPath)"
-            
+
             # Update storage file
             $storageFile = Join-Path $installation.UserDataPath "storage.json"
             $storageSuccess = Update-ApplicationStorageFile -StorageFilePath $storageFile -DeviceFingerprint $deviceFingerprint
-            
+
             # Update databases
             $dbSuccess = Update-ApplicationDatabases -UserDataPath $installation.UserDataPath -DeviceFingerprint $deviceFingerprint
-            
+
             # Clean global storage
             $globalSuccess = Remove-AugmentGlobalStorageDirectories -UserDataPath $installation.UserDataPath
-            
+
             $installationSuccess = $storageSuccess -and $dbSuccess -and $globalSuccess
             $overallSuccess = $overallSuccess -and $installationSuccess
-            
+
             if ($installationSuccess) {
                 Write-LogSuccess "Installation processed successfully: $($installation.ApplicationName)"
             } else {
                 Write-LogError "Installation had errors: $($installation.ApplicationName)"
             }
         }
-        
+
         # Generate operation summary
         $duration = (Get-Date) - $script:OperationStartTime
-        
+
         Write-LogInfo "Enterprise Trial Account Reset Operation Completed"
         Write-LogInfo "Operation Summary:"
         Write-LogInfo "  - Total Installations Processed: $($installations.Count)"
@@ -506,7 +424,7 @@ function Start-TrialAccountReset {
         Write-LogInfo "  - Backup Files Created: $(if (-not $DryRun) { 'YES' } else { 'N/A (DRY RUN)' })"
         Write-LogInfo "  - Operation Duration: $($duration.TotalSeconds) seconds"
         Write-LogInfo "  - Overall Success: $(if ($overallSuccess) { 'YES' } else { 'NO' })"
-        
+
         if ($overallSuccess) {
             Write-LogSuccess "All operations completed successfully"
             if (-not $DryRun) {
@@ -516,28 +434,69 @@ function Start-TrialAccountReset {
         } else {
             Write-LogError "Some operations encountered errors"
         }
-        
+
         return $overallSuccess
-        
+
     } catch {
         Write-LogCritical "Critical failure: $($_.Exception.Message)"
         Write-LogDebug "Stack Trace: $($_.ScriptStackTrace)"
         return $false
     }
 }
+#endregion
 
+#region Help and Utility Functions
+function Show-TrialAccountResetHelp {
+    Write-Host @"
+Reset Trial Account v3.0.0 - Enterprise-Grade Augment VIP Trial Account Reset Tool
+
+USAGE:
+    .\Reset-TrialAccount.ps1 [options]
+
+OPERATIONS:
+    reset       Reset trial account (default)
+    help        Show this help message
+
+OPTIONS:
+    -VerboseOutput          Enable verbose logging output for debugging purposes
+    -DryRun                 Perform dry run without making actual changes
+    -Force                  Force operation without user confirmation
+
+EXAMPLES:
+    .\Reset-TrialAccount.ps1 -DryRun -VerboseOutput
+    .\Reset-TrialAccount.ps1 -Force
+    .\Reset-TrialAccount.ps1
+
+PURPOSE:
+    Comprehensive solution for resetting trial account limitations using unified core modules.
+    Generates new device fingerprints and clears trial restriction data.
+"@
+}
 #endregion
 
 # Execute main function if script is run directly
 if ($MyInvocation.InvocationName -ne '.') {
-    $operationResult = Start-TrialAccountReset
-    
-    # Set appropriate exit code
-    if ($operationResult) {
-        Write-LogSuccess "Enterprise Trial Account Reset Tool completed successfully"
-        exit 0
-    } else {
-        Write-LogError "Enterprise Trial Account Reset Tool completed with errors"
-        exit 1
+    switch ($Operation) {
+        "reset" {
+            $operationResult = Start-TrialAccountReset
+
+            # Set appropriate exit code
+            if ($operationResult) {
+                Write-LogSuccess "Enterprise Trial Account Reset Tool completed successfully"
+                exit 0
+            } else {
+                Write-LogError "Enterprise Trial Account Reset Tool completed with errors"
+                exit 1
+            }
+        }
+        "help" {
+            Show-TrialAccountResetHelp
+            exit 0
+        }
+        default {
+            Write-LogError "Unknown operation: $Operation"
+            Show-TrialAccountResetHelp
+            exit 1
+        }
     }
 }

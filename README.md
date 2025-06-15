@@ -232,5 +232,43 @@ irm https://gh.imixc.top/raw.githubusercontent.com/IIXINGCHEN/augment-vips/main/
 
 ## 📅 更新记录
 
-**最后更新时间**: 2025-06-15 12:30:00 UTC
+**最后更新时间**: 2025-06-15 20:45:00 UTC
 **版本状态**: 生产就绪 - 已验证完整功能
+
+---
+
+## 🎮 新增：图形化启动器
+
+### 🖱️ 方法1：批处理启动器（最简单）
+```cmd
+# 双击运行图形化菜单
+Quick-Launcher.bat
+```
+
+### 💻 方法2：PowerShell启动器
+```powershell
+# 交互式菜单
+powershell -ExecutionPolicy Bypass -File "Launch-Tools.ps1"
+
+# 直接命令
+powershell -ExecutionPolicy Bypass -File "Launch-Tools.ps1" -Action quick    # 完整修复
+powershell -ExecutionPolicy Bypass -File "Launch-Tools.ps1" -Action trial    # 试用重置
+powershell -ExecutionPolicy Bypass -File "Launch-Tools.ps1" -Action analyze  # 风险分析
+```
+
+### 📚 详细文档
+- [Anti-Detection-Tools-Guide.md](Anti-Detection-Tools-Guide.md) - 完整使用指南（英文）
+- [反检测工具使用指南.md](反检测工具使用指南.md) - 完整使用指南（中文）
+
+### 🛠️ 可用工具
+所有工具已完全修复并可正常使用：
+- ✅ Advanced-Anti-Detection.ps1 - 主控制器
+- ✅ Reset-TrialAccount.ps1 - 试用账户重置
+- ✅ Reset-DeviceFingerprint.ps1 - 设备指纹重置
+- ✅ Clean-SessionData.ps1 - 会话数据清理
+- ✅ Session-ID-Isolator.ps1 - 会话ID隔离
+- ✅ Cross-Account-Delinker.ps1 - 跨账户去关联
+- ✅ Network-Session-Manager.ps1 - 网络会话管理
+- ✅ Network-Fingerprint-Spoof.ps1 - 网络指纹伪造
+- ✅ System-Environment-Reset.ps1 - 系统环境重置
+- ✅ Complete-Augment-Fix.ps1 - 综合修复工具

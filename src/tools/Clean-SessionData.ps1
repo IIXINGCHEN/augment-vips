@@ -5,8 +5,11 @@
 
 [CmdletBinding()]
 param(
+    [Parameter(Mandatory=$false)]
+    [ValidateSet("clean", "help")]
+    [string]$Operation = "clean",
+
     [switch]$DryRun = $false,
-    [switch]$Verbose = $false,
     [switch]$Force = $false
 )
 
@@ -24,21 +27,14 @@ if (Test-Path $loggerPath) {
     function Write-LogSuccess { param([string]$Message) Write-Host "[SUCCESS] $Message" -ForegroundColor Green }
     function Write-LogWarning { param([string]$Message) Write-Host "[WARNING] $Message" -ForegroundColor Yellow }
     function Write-LogError { param([string]$Message) Write-Host "[ERROR] $Message" -ForegroundColor Red }
-    function Write-LogDebug { param([string]$Message) if ($Verbose) { Write-Host "[DEBUG] $Message" -ForegroundColor Gray } }
+    function Write-LogDebug { param([string]$Message) if ($VerbosePreference -eq 'Continue') { Write-Host "[DEBUG] $Message" -ForegroundColor Gray } }
 }
 
 # Set error handling
 $ErrorActionPreference = "Stop"
 
 #region Session Data Patterns
-
 function Get-EncryptedSessionPatterns {
-    <#
-    .SYNOPSIS
-        Gets patterns for encrypted session data identification
-    .DESCRIPTION
-        Returns array of patterns used to identify encrypted session and authentication data
-    #>
     return @(
         # Critical encrypted session patterns
         "secret://%augment%",
@@ -47,25 +43,25 @@ function Get-EncryptedSessionPatterns {
         "secret://%authentication%",
         "secret://%auth%",
         "secret://%token%",
-        
+
         # Augment session specific patterns
         "%augment.sessions%",
         "%extensionId%augment%",
         "%key%augment%",
         "%key%sessions%",
-        
+
         # Authentication and token patterns
         "%authToken%",
         "%accessToken%",
         "%refreshToken%",
         "%sessionToken%",
         "%bearerToken%",
-        
+
         # Extension authentication patterns
         "%vscode.authentication%",
         "%ms-vscode.vscode-account%",
         "%github.vscode-pull-request-github%",
-        
+
         # Augment specific authentication
         "%augment.auth%",
         "%augment.token%",
@@ -75,21 +71,15 @@ function Get-EncryptedSessionPatterns {
 }
 
 function Get-SessionDataQuery {
-    <#
-    .SYNOPSIS
-        Generates SQL query to find session data
-    .DESCRIPTION
-        Creates a SELECT query to identify session-related entries
-    #>
     $patterns = Get-EncryptedSessionPatterns
     $conditions = @()
-    
+
     foreach ($pattern in $patterns) {
         $conditions += "key LIKE '$pattern'"
     }
-    
+
     $whereClause = $conditions -join " OR`n    "
-    
+
     return @"
 SELECT key, length(value) as data_length FROM ItemTable WHERE
     $whereClause;
@@ -97,58 +87,40 @@ SELECT key, length(value) as data_length FROM ItemTable WHERE
 }
 
 function Get-SessionCleaningQuery {
-    <#
-    .SYNOPSIS
-        Generates SQL query to delete session data
-    .DESCRIPTION
-        Creates a DELETE query to remove session-related entries
-    #>
     $patterns = Get-EncryptedSessionPatterns
     $conditions = @()
-    
+
     foreach ($pattern in $patterns) {
         $conditions += "key LIKE '$pattern'"
     }
-    
+
     $whereClause = $conditions -join " OR`n    "
-    
+
     return @"
 DELETE FROM ItemTable WHERE
     $whereClause;
 "@
 }
-
 #endregion
 
 #region Core Functions
-
 function Test-SessionData {
-    <#
-    .SYNOPSIS
-        Analyzes session data in a database
-    .DESCRIPTION
-        Scans database for session-related data and returns analysis
-    .PARAMETER DatabasePath
-        Path to the SQLite database file
-    .EXAMPLE
-        Test-SessionData -DatabasePath "C:\path\to\state.vscdb"
-    #>
     [CmdletBinding()]
     param(
         [Parameter(Mandatory = $true)]
         [string]$DatabasePath
     )
-    
+
     if (-not (Test-Path $DatabasePath)) {
         return @()
     }
-    
+
     try {
         Write-LogDebug "Analyzing session data in: $DatabasePath"
-        
+
         $analysisQuery = Get-SessionDataQuery
         $result = & sqlite3 $DatabasePath $analysisQuery 2>$null
-        
+
         if ($LASTEXITCODE -eq 0 -and $result) {
             $sessionData = @()
             foreach ($line in $result) {
@@ -163,7 +135,7 @@ function Test-SessionData {
             }
             return $sessionData
         }
-        
+
         return @()
     } catch {
         Write-LogWarning "Failed to analyze session data in $DatabasePath`: $($_.Exception.Message)"
@@ -172,30 +144,20 @@ function Test-SessionData {
 }
 
 function Remove-DatabaseSessionData {
-    <#
-    .SYNOPSIS
-        Removes session data from a specific database
-    .DESCRIPTION
-        Removes session-related entries from SQLite database
-    .PARAMETER DatabasePath
-        Path to the SQLite database file
-    .EXAMPLE
-        Remove-DatabaseSessionData -DatabasePath "C:\path\to\state.vscdb"
-    #>
     [CmdletBinding()]
     param(
         [Parameter(Mandatory = $true)]
         [string]$DatabasePath
     )
-    
+
     if (-not (Test-Path $DatabasePath)) {
         Write-LogWarning "Database not found: $DatabasePath"
         return $false
     }
-    
+
     try {
         Write-LogInfo "Cleaning session data from: $DatabasePath"
-        
+
         # First, analyze what we're about to remove
         $sessionData = Test-SessionData -DatabasePath $DatabasePath
         if ($sessionData.Count -gt 0) {
@@ -207,64 +169,55 @@ function Remove-DatabaseSessionData {
             Write-LogInfo "No encrypted session data found in database"
             return $true
         }
-        
+
         if ($DryRun) {
             Write-LogInfo "DRY RUN: Would remove $($sessionData.Count) session entries from $DatabasePath"
             return $true
         }
-        
+
         # Execute cleaning query
         $cleaningQuery = Get-SessionCleaningQuery
         & sqlite3 $DatabasePath $cleaningQuery
-        
+
         if ($LASTEXITCODE -eq 0) {
             # Get count of changes
             $changesCount = & sqlite3 $DatabasePath "SELECT changes();"
-            
+
             # Run VACUUM to reclaim space
             & sqlite3 $DatabasePath "VACUUM;"
-            
+
             Write-LogSuccess "Removed $changesCount encrypted session entries from: $DatabasePath"
             return $true
         } else {
             Write-LogError "Failed to clean session data from: $DatabasePath"
             return $false
         }
-        
+
     } catch {
         Write-LogError "Exception cleaning session data from $DatabasePath`: $($_.Exception.Message)"
         return $false
     }
 }
+#endregion
 
 function Remove-ExtensionStorage {
-    <#
-    .SYNOPSIS
-        Cleans Augment extension storage
-    .DESCRIPTION
-        Removes Augment-related extension storage files and directories
-    .PARAMETER InstallationPath
-        Path to VS Code installation directory
-    .EXAMPLE
-        Remove-ExtensionStorage -InstallationPath "C:\Users\User\AppData\Roaming\Code"
-    #>
     [CmdletBinding()]
     param(
         [Parameter(Mandatory = $true)]
         [string]$InstallationPath
     )
-    
+
     Write-LogInfo "Cleaning extension storage in: $InstallationPath"
-    
+
     # Clean global storage for Augment extension
     $globalStoragePaths = @(
         "$InstallationPath\User\globalStorage\augment.vscode-augment",
         "$InstallationPath\User\globalStorage\augment.augment-chat",
         "$InstallationPath\User\globalStorage\augment.augment-panel"
     )
-    
+
     $cleanedCount = 0
-    
+
     foreach ($path in $globalStoragePaths) {
         if (Test-Path $path) {
             try {
@@ -280,7 +233,7 @@ function Remove-ExtensionStorage {
             }
         }
     }
-    
+
     # Clean workspace storage for current project
     $workspaceStoragePath = "$InstallationPath\User\workspaceStorage"
     if (Test-Path $workspaceStoragePath) {
@@ -302,19 +255,11 @@ function Remove-ExtensionStorage {
             }
         }
     }
-    
+
     return $cleanedCount
 }
 
 function Get-VSCodeInstallations {
-    <#
-    .SYNOPSIS
-        Discovers VS Code and related editor installations (统一版本)
-    .DESCRIPTION
-        使用统一的路径发现逻辑，返回标准格式的安装信息
-    .EXAMPLE
-        Get-VSCodeInstallations
-    #>
     [CmdletBinding()]
     param()
 
@@ -345,96 +290,131 @@ function Get-VSCodeInstallations {
                 "$env:LOCALAPPDATA\VSCodium"
             )
         }
-    
-    foreach ($path in $searchPaths) {
-        if (Test-Path $path) {
-            $installations += @{
-                Path = $path
-                Type = Split-Path $path -Leaf
-                DatabasePaths = @(
-                    "$path\User\workspaceStorage\*\state.vscdb",
-                    "$path\User\globalStorage\*\state.vscdb"
-                )
+
+        foreach ($path in $searchPaths) {
+            if (Test-Path $path) {
+                $installations += @{
+                    Path = $path
+                    Type = Split-Path $path -Leaf
+                    DatabasePaths = @(
+                        "$path\User\workspaceStorage\*\state.vscdb",
+                        "$path\User\globalStorage\*\state.vscdb"
+                    )
+                }
             }
         }
+
+        return $installations
     }
-    
-    return $installations
 }
 
-#endregion
-
-#region Main Function
-
 function Start-SessionDataCleanup {
-    <#
-    .SYNOPSIS
-        Main function to clean session data
-    .DESCRIPTION
-        Orchestrates the complete session data cleanup process
-    .EXAMPLE
-        Start-SessionDataCleanup
-    #>
     [CmdletBinding()]
     param()
-    
-    Write-LogInfo "Starting Encrypted Session Data Deep Cleaning..."
-    
+
+    Write-LogInfo "Starting encrypted session data cleanup"
+    Write-LogInfo "Operation Mode: $(if ($DryRun) { 'DRY RUN' } else { 'LIVE EXECUTION' })"
+
     # Check for SQLite3
     try {
         $null = & sqlite3 -version
+        Write-LogInfo "SQLite3 found and ready"
     } catch {
         Write-LogError "SQLite3 is required but not found in PATH. Please install SQLite3."
         return $false
     }
-    
-    # Get VS Code installations
+
+    # Get installations
     $installations = Get-VSCodeInstallations
+
     if ($installations.Count -eq 0) {
-        Write-LogWarning "No VS Code installations found"
-        return $false
+        Write-LogWarning "No VS Code/Cursor installations found"
+        return $true
     }
-    
+
+    Write-LogInfo "Found $($installations.Count) installation(s) to process"
+
+    $overallSuccess = $true
     $totalCleaned = 0
-    $totalErrors = 0
-    $totalSessionsRemoved = 0
-    
+
     foreach ($installation in $installations) {
-        Write-LogInfo "Processing installation: $($installation.Type) at $($installation.Path)"
-        
-        # Clean database session data
-        foreach ($dbPath in $installation.DatabasePaths) {
-            $dbFiles = Get-ChildItem -Path $dbPath -ErrorAction SilentlyContinue
+        Write-LogInfo "Processing: $($installation.Type) at $($installation.Path)"
+
+        # Clean databases
+        foreach ($dbPattern in $installation.DatabasePaths) {
+            $dbFiles = Get-ChildItem $dbPattern -ErrorAction SilentlyContinue
             foreach ($dbFile in $dbFiles) {
-                if (Remove-DatabaseSessionData -DatabasePath $dbFile.FullName) {
-                    $totalCleaned++
-                } else {
-                    $totalErrors++
-                }
+                $success = Remove-DatabaseSessionData -DatabasePath $dbFile.FullName
+                $overallSuccess = $overallSuccess -and $success
             }
         }
-        
+
         # Clean extension storage
-        $storageCleanedCount = Remove-ExtensionStorage -InstallationPath $installation.Path
-        $totalSessionsRemoved += $storageCleanedCount
+        $cleanedCount = Remove-ExtensionStorage -InstallationPath $installation.Path
+        $totalCleaned += $cleanedCount
+
+        Write-LogSuccess "Completed processing: $($installation.Type)"
     }
-    
-    Write-LogSuccess "Encrypted session data cleaning completed."
-    Write-LogInfo "Databases cleaned: $totalCleaned, Storage items removed: $totalSessionsRemoved, Errors: $totalErrors"
-    
-    if ($totalErrors -eq 0) {
-        Write-LogSuccess "All encrypted session data successfully removed!"
-        Write-LogInfo "Authentication tokens and session data cleared - login state reset."
-        return $true
-    } else {
-        Write-LogWarning "Some errors occurred during session data cleaning."
-        return $false
+
+    Write-LogInfo "Session data cleanup completed"
+    Write-LogInfo "Total items cleaned: $totalCleaned"
+    Write-LogInfo "Overall success: $(if ($overallSuccess) { 'YES' } else { 'NO' })"
+
+    if (-not $DryRun) {
+        Write-LogInfo "IMPORTANT: Please restart all VS Code/Cursor instances to apply changes"
     }
+
+    return $overallSuccess
 }
 
+#region Help and Utility Functions
+function Show-SessionDataCleanupHelp {
+    Write-Host @"
+Clean Session Data v3.0.0 - Encrypted Session Data Deep Cleaner
+
+USAGE:
+    .\Clean-SessionData.ps1 [options]
+
+OPERATIONS:
+    clean       Clean session data (default)
+    help        Show this help message
+
+OPTIONS:
+    -DryRun             Preview operations without making changes
+    -Force              Force operation without user confirmation
+    -Verbose            Enable detailed logging
+
+EXAMPLES:
+    .\Clean-SessionData.ps1 -DryRun -Verbose
+    .\Clean-SessionData.ps1 -Force
+    .\Clean-SessionData.ps1
+
+PURPOSE:
+    Deep cleaning of all encrypted session data and authentication tokens.
+    Removes session-related entries from SQLite databases and extension storage.
+"@
+}
 #endregion
 
 # Execute main function if script is run directly
 if ($MyInvocation.InvocationName -ne '.') {
-    Start-SessionDataCleanup
+    switch ($Operation) {
+        "clean" {
+            $result = Start-SessionDataCleanup
+            if ($result) {
+                exit 0
+            } else {
+                exit 1
+            }
+        }
+        "help" {
+            Show-SessionDataCleanupHelp
+            exit 0
+        }
+        default {
+            Write-LogError "Unknown operation: $Operation"
+            Show-SessionDataCleanupHelp
+            exit 1
+        }
+    }
 }

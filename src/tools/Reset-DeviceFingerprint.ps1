@@ -5,8 +5,11 @@
 
 [CmdletBinding()]
 param(
+    [Parameter(Mandatory=$false)]
+    [ValidateSet("reset", "help")]
+    [string]$Operation = "reset",
+
     [switch]$DryRun = $false,
-    [switch]$Verbose = $false,
     [switch]$Force = $false,
     [switch]$PreservePlugin = $false
 )
@@ -25,7 +28,7 @@ if (Test-Path $standardImportsPath) {
     function Write-LogSuccess { param([string]$Message) Write-Host "[SUCCESS] $Message" -ForegroundColor Green }
     function Write-LogWarning { param([string]$Message) Write-Host "[WARNING] $Message" -ForegroundColor Yellow }
     function Write-LogError { param([string]$Message) Write-Host "[ERROR] $Message" -ForegroundColor Red }
-    function Write-LogDebug { param([string]$Message) if ($Verbose) { Write-Host "[DEBUG] $Message" -ForegroundColor Gray } }
+    function Write-LogDebug { param([string]$Message) if ($VerbosePreference -eq 'Continue') { Write-Host "[DEBUG] $Message" -ForegroundColor Gray } }
     Write-LogWarning "StandardImports unavailable, using fallback logging system"
 }
 
@@ -400,7 +403,50 @@ function Start-DeviceFingerprintReset {
 
 #endregion
 
+#region Help and Utility Functions
+
+function Show-DeviceFingerprintResetHelp {
+    Write-Host @"
+Reset Device Fingerprint v3.0.0 - Device Fingerprint Complete Reset Tool
+
+USAGE:
+    .\Reset-DeviceFingerprint.ps1 [options]
+
+OPERATIONS:
+    reset       Reset device fingerprint (default)
+    help        Show this help message
+
+OPTIONS:
+    -DryRun             Preview changes without applying them
+    -Force              Force reset even if installations are running
+    -PreservePlugin     Preserve Augment plugin data during reset
+    -Verbose            Enable detailed logging
+
+EXAMPLES:
+    .\Reset-DeviceFingerprint.ps1 -DryRun -Verbose
+    .\Reset-DeviceFingerprint.ps1 -Force
+    .\Reset-DeviceFingerprint.ps1 -PreservePlugin
+
+PURPOSE:
+    Completely resets all device fingerprint data to break trial account tracking.
+    Generates new machine ID, device ID, SQM ID, and session timestamps.
+"@
+}
+
+#endregion
+
 # Execute main function if script is run directly
 if ($MyInvocation.InvocationName -ne '.') {
-    Start-DeviceFingerprintReset
+    switch ($Operation) {
+        "reset" {
+            Start-DeviceFingerprintReset
+        }
+        "help" {
+            Show-DeviceFingerprintResetHelp
+        }
+        default {
+            Write-LogError "Unknown operation: $Operation"
+            Show-DeviceFingerprintResetHelp
+        }
+    }
 }
