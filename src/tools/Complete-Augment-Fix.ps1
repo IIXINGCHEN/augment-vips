@@ -21,10 +21,23 @@ param(
     [switch]$ExportReport = $false
 )
 
-# Set console encoding to prevent garbled text - ASCII only for maximum compatibility
+# Set console encoding to prevent garbled text - Use ASCII for maximum compatibility
 $OutputEncoding = [System.Text.Encoding]::ASCII
 [Console]::OutputEncoding = [System.Text.Encoding]::ASCII
 $env:LANG = "en_US"
+
+# Ensure PowerShell uses English culture for consistent error messages
+[System.Threading.Thread]::CurrentThread.CurrentCulture = [System.Globalization.CultureInfo]::InvariantCulture
+[System.Threading.Thread]::CurrentThread.CurrentUICulture = [System.Globalization.CultureInfo]::InvariantCulture
+
+# Force console to use ASCII encoding to prevent Unicode display issues
+if ($Host.UI.RawUI) {
+    try {
+        $Host.UI.RawUI.OutputEncoding = [System.Text.Encoding]::ASCII
+    } catch {
+        # Ignore if not supported
+    }
+}
 
 # Import standard core modules
 $scriptPath = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -74,6 +87,40 @@ function Write-Info($msg) { Write-LogInfo $msg }
 function Write-Warn($msg) { Write-LogWarning $msg }
 function Write-Error($msg) { Write-LogError $msg }
 function Write-Success($msg) { Write-LogSuccess $msg }
+
+# Null-safe SQLite query function to prevent "cannot call method on null value" errors
+function Invoke-SafeSQLiteQuery {
+    param(
+        [string]$DatabasePath,
+        [string]$Query,
+        [string]$DefaultValue = ""
+    )
+
+    try {
+        if (-not (Test-Path $DatabasePath)) {
+            Write-Warn "Database file not found: $DatabasePath"
+            return $DefaultValue
+        }
+
+        $result = & sqlite3 $DatabasePath $Query 2>$null
+
+        if ($LASTEXITCODE -ne 0) {
+            Write-Warn "SQLite query failed for: $DatabasePath"
+            return $DefaultValue
+        }
+
+        # Null-safe string handling
+        if ($result -and $result.ToString().Trim()) {
+            return $result.ToString().Trim()
+        } else {
+            return $DefaultValue
+        }
+
+    } catch {
+        Write-Warn "Exception during SQLite query: $($_.Exception.Message)"
+        return $DefaultValue
+    }
+}
 
 function Show-Header {
     Write-Host ""
@@ -222,9 +269,9 @@ function Get-DatabaseTelemetryData {
         )
         
         foreach ($key in $telemetryKeys) {
-            $value = & sqlite3 $DatabasePath "SELECT value FROM ItemTable WHERE key = '$key';" 2>$null
-            if ($LASTEXITCODE -eq 0 -and $value) {
-                $telemetryData[$key] = $value.Trim()
+            $value = Invoke-SafeSQLiteQuery -DatabasePath $DatabasePath -Query "SELECT value FROM ItemTable WHERE key = '$key';" -DefaultValue ""
+            if ($value) {
+                $telemetryData[$key] = $value
                 if ($VerboseOutput) {
                     Write-Info "  $key = $value"
                 }
@@ -327,8 +374,11 @@ function Test-TimestampConsistency {
             $configDateTime = [DateTimeOffset]::FromUnixTimeMilliseconds($configTimestamp).ToUniversalTime()
             $configGMTString = $configDateTime.ToString("ddd, dd MMM yyyy HH:mm:ss 'GMT'", [System.Globalization.CultureInfo]::InvariantCulture)
 
-            # Compare the GMT strings
-            if ($DatabaseValue.Trim() -eq $configGMTString.Trim()) {
+            # Compare the GMT strings with null-safe handling
+            $dbValueSafe = if ($DatabaseValue) { $DatabaseValue.ToString().Trim() } else { "" }
+            $configGMTSafe = if ($configGMTString) { $configGMTString.ToString().Trim() } else { "" }
+
+            if ($dbValueSafe -eq $configGMTSafe) {
                 return $true
             }
         }
@@ -454,7 +504,8 @@ function Invoke-DeepConsistencyCheck {
     }
 
     foreach ($installation in $Installations) {
-        Write-Info "Processing installation: $($installation.Type) at $($installation.Path)"
+        Write-Info "Processing installation: $($installation.Type)"
+        Write-Info "  Path: $($installation.Path)"
 
         $installationReport = @{
             Type = $installation.Type
@@ -640,7 +691,8 @@ function Update-ConfigFile {
         }
 
         if ($DryRun) {
-            Write-Info "[DRY RUN] Would update: $($changes -join ', ') in $FilePath"
+            Write-Info "[DRY RUN] Would update: $($changes -join ', ')"
+            Write-Info "  File: $FilePath"
             $script:SuccessfulOperations++
             return $true
         }
@@ -661,8 +713,42 @@ function Update-ConfigFile {
 
         # Save file
         $content | ConvertTo-Json -Depth 10 | Set-Content $FilePath -Encoding UTF8
-        Write-Success "Updated config file: $FilePath"
-        Write-Info "  Changes: $($changes -join ', ')"
+
+        # Verify that all values were written correctly
+        Write-Info "Verifying config file updates..."
+        try {
+            $verifyContent = Get-Content $FilePath -Raw -Encoding UTF8 | ConvertFrom-Json
+
+            $verificationChecks = @{
+                'telemetry.machineId' = $NewIds.MachineId
+                'telemetry.devDeviceId' = $NewIds.DeviceId
+                'telemetry.sqmId' = $NewIds.SqmId
+                'telemetry.firstSessionDate' = $NewIds.Timestamp
+                'telemetry.lastSessionDate' = $NewIds.Timestamp
+                'telemetry.currentSessionDate' = $NewIds.Timestamp
+            }
+
+            foreach ($key in $verificationChecks.Keys) {
+                $actualValue = $verifyContent.$key
+                $expectedValue = $verificationChecks[$key]
+
+                if ($actualValue -ne $expectedValue) {
+                    Write-Error "Config verification failed for $key : Expected '$expectedValue', Got '$actualValue'"
+                    $script:FailedOperations++
+                    return $false
+                } else {
+                    Write-Info "Verified $key : $actualValue"
+                }
+            }
+
+            Write-Success "Updated config file: $FilePath"
+            Write-Info "  Changes: $($changes -join ', ')"
+
+        } catch {
+            Write-Error "Failed to verify config file updates: $($_.Exception.Message)"
+            $script:FailedOperations++
+            return $false
+        }
 
         # Record modification details for summary
         $modificationDetail = @{
@@ -718,26 +804,20 @@ function Update-DatabaseFile {
             return $true
         }
 
-        # Check current values
-        $currentMachineId = & sqlite3 $FilePath "SELECT value FROM ItemTable WHERE key = 'telemetry.machineId';" 2>$null
-        $currentDeviceId = & sqlite3 $FilePath "SELECT value FROM ItemTable WHERE key = 'telemetry.devDeviceId';" 2>$null
-
-        if ($LASTEXITCODE -ne 0) {
-            Write-Error "Failed to query database: $FilePath"
-            $script:FailedOperations++
-            return $false
-        }
+        # Check current values with safe query operations
+        $currentMachineIdSafe = Invoke-SafeSQLiteQuery -DatabasePath $FilePath -Query "SELECT value FROM ItemTable WHERE key = 'telemetry.machineId';" -DefaultValue ""
+        $currentDeviceIdSafe = Invoke-SafeSQLiteQuery -DatabasePath $FilePath -Query "SELECT value FROM ItemTable WHERE key = 'telemetry.devDeviceId';" -DefaultValue ""
 
         # Check if updates are needed
         $needsUpdate = $false
         $changes = @()
 
-        if ($currentMachineId.Trim() -ne $NewIds.MachineId) {
+        if ($currentMachineIdSafe -ne $NewIds.MachineId) {
             $needsUpdate = $true
             $changes += "Machine ID"
         }
 
-        if ($currentDeviceId.Trim() -ne $NewIds.DeviceId) {
+        if ($currentDeviceIdSafe -ne $NewIds.DeviceId) {
             $needsUpdate = $true
             $changes += "Device ID"
         }
@@ -749,7 +829,8 @@ function Update-DatabaseFile {
         }
 
         if ($DryRun) {
-            Write-Info "[DRY RUN] Would update: $($changes -join ', ') in $FilePath"
+            Write-Info "[DRY RUN] Would update: $($changes -join ', ')"
+            Write-Info "  File: $FilePath"
             $script:SuccessfulOperations++
             return $true
         }
@@ -760,21 +841,49 @@ function Update-DatabaseFile {
             return $false
         }
 
-        # Update database with proper SQL escaping
+        # Update database with INSERT OR REPLACE to ensure data is written even if key doesn't exist
         $updateQueries = @(
-            "UPDATE ItemTable SET value = '$($NewIds.MachineId)' WHERE key = 'telemetry.machineId';",
-            "UPDATE ItemTable SET value = '$($NewIds.DeviceId)' WHERE key = 'telemetry.devDeviceId';",
-            "UPDATE ItemTable SET value = '$($NewIds.SqmId)' WHERE key = 'telemetry.sqmId';",
-            "UPDATE ItemTable SET value = '$($NewIds.GMTString)' WHERE key = 'telemetry.firstSessionDate';",
-            "UPDATE ItemTable SET value = '$($NewIds.GMTString)' WHERE key = 'telemetry.lastSessionDate';",
-            "UPDATE ItemTable SET value = '$($NewIds.GMTString)' WHERE key = 'telemetry.currentSessionDate';",
-            "UPDATE ItemTable SET value = '$($NewIds.DeviceId)' WHERE key = 'storage.serviceMachineId';"
+            "INSERT OR REPLACE INTO ItemTable (key, value) VALUES ('telemetry.machineId', '$($NewIds.MachineId)');",
+            "INSERT OR REPLACE INTO ItemTable (key, value) VALUES ('telemetry.devDeviceId', '$($NewIds.DeviceId)');",
+            "INSERT OR REPLACE INTO ItemTable (key, value) VALUES ('telemetry.sqmId', '$($NewIds.SqmId)');",
+            "INSERT OR REPLACE INTO ItemTable (key, value) VALUES ('telemetry.firstSessionDate', '$($NewIds.GMTString)');",
+            "INSERT OR REPLACE INTO ItemTable (key, value) VALUES ('telemetry.lastSessionDate', '$($NewIds.GMTString)');",
+            "INSERT OR REPLACE INTO ItemTable (key, value) VALUES ('telemetry.currentSessionDate', '$($NewIds.GMTString)');",
+            "INSERT OR REPLACE INTO ItemTable (key, value) VALUES ('storage.serviceMachineId', '$($NewIds.DeviceId)');"
         )
 
         foreach ($query in $updateQueries) {
+            Write-Info "Executing: $query"
             & sqlite3 $FilePath $query 2>$null
             if ($LASTEXITCODE -ne 0) {
-                Write-Warn "Query failed (may be normal if key doesn't exist): $query"
+                Write-Error "Failed to execute query: $query"
+                $script:FailedOperations++
+                return $false
+            }
+        }
+
+        # Verify that all values were written correctly
+        Write-Info "Verifying database updates..."
+        $verificationQueries = @{
+            'telemetry.machineId' = $NewIds.MachineId
+            'telemetry.devDeviceId' = $NewIds.DeviceId
+            'telemetry.sqmId' = $NewIds.SqmId
+            'telemetry.firstSessionDate' = $NewIds.GMTString
+            'telemetry.lastSessionDate' = $NewIds.GMTString
+            'telemetry.currentSessionDate' = $NewIds.GMTString
+            'storage.serviceMachineId' = $NewIds.DeviceId
+        }
+
+        foreach ($key in $verificationQueries.Keys) {
+            $actualValue = Invoke-SafeSQLiteQuery -DatabasePath $FilePath -Query "SELECT value FROM ItemTable WHERE key = '$key';" -DefaultValue ""
+            $expectedValue = $verificationQueries[$key]
+
+            if ($actualValue -ne $expectedValue) {
+                Write-Error "Verification failed for $key : Expected '$expectedValue', Got '$actualValue'"
+                $script:FailedOperations++
+                return $false
+            } else {
+                Write-Info "Verified $key : $actualValue"
             }
         }
 
@@ -786,16 +895,12 @@ function Update-DatabaseFile {
             WorkbenchConfigs = 0
         }
 
-        # Count existing records before cleanup
-        $augmentCount = & sqlite3 $FilePath "SELECT COUNT(*) FROM ItemTable WHERE key LIKE '%augment%' OR key LIKE '%Augment%' OR value LIKE '%augment%';" 2>$null
-        if ($LASTEXITCODE -eq 0 -and $augmentCount) {
-            $cleanupStats.AugmentRecords = [int]$augmentCount
-        }
+        # Count existing records before cleanup using safe queries
+        $augmentCountSafe = Invoke-SafeSQLiteQuery -DatabasePath $FilePath -Query "SELECT COUNT(*) FROM ItemTable WHERE key LIKE '%augment%' OR key LIKE '%Augment%' OR value LIKE '%augment%';" -DefaultValue "0"
+        $cleanupStats.AugmentRecords = [int]$augmentCountSafe
 
-        $terminalCount = & sqlite3 $FilePath "SELECT COUNT(*) FROM ItemTable WHERE key LIKE '%terminal.history%';" 2>$null
-        if ($LASTEXITCODE -eq 0 -and $terminalCount) {
-            $cleanupStats.TerminalHistory = [int]$terminalCount
-        }
+        $terminalCountSafe = Invoke-SafeSQLiteQuery -DatabasePath $FilePath -Query "SELECT COUNT(*) FROM ItemTable WHERE key LIKE '%terminal.history%';" -DefaultValue "0"
+        $cleanupStats.TerminalHistory = [int]$terminalCountSafe
 
         $deepCleanupQueries = @(
             # Core Augment data cleanup
@@ -884,7 +989,8 @@ function Invoke-IDSync {
 
     # Process all installations
     foreach ($installation in $Installations) {
-        Write-Info "Processing installation: $($installation.Type) at $($installation.Path)"
+        Write-Info "Processing installation: $($installation.Type)"
+        Write-Info "  Path: $($installation.Path)"
 
         # Update all config files
         foreach ($configFile in $installation.StorageFiles) {
@@ -948,7 +1054,8 @@ function Invoke-TimestampFix {
                 }
 
                 if ($DryRun) {
-                    Write-Info "[DRY RUN] Would fix timestamps in: $configFile"
+                    Write-Info "[DRY RUN] Would fix timestamps in:"
+                    Write-Info "  $configFile"
                     continue
                 }
 
@@ -1000,7 +1107,8 @@ function Invoke-DeepCleanup {
         foreach ($augmentDir in $augmentDirs) {
             if (Test-Path $augmentDir) {
                 if ($DryRun) {
-                    Write-Info "[DRY RUN] Would remove directory: $augmentDir"
+                    Write-Info "[DRY RUN] Would remove directory:"
+                    Write-Info "  $augmentDir"
                 } else {
                     try {
                         Remove-Item -Path $augmentDir -Recurse -Force -ErrorAction Stop
@@ -1020,7 +1128,8 @@ function Invoke-DeepCleanup {
             $augmentExtensions = Get-ChildItem -Path $extensionsPath -Filter "*augment*" -Directory -ErrorAction SilentlyContinue
             foreach ($augmentExt in $augmentExtensions) {
                 if ($DryRun) {
-                    Write-Info "[DRY RUN] Would remove extension directory: $($augmentExt.FullName)"
+                    Write-Info "[DRY RUN] Would remove extension directory:"
+                    Write-Info "  $($augmentExt.FullName)"
                 } else {
                     try {
                         Remove-Item -Path $augmentExt.FullName -Recurse -Force -ErrorAction Stop
@@ -1036,9 +1145,9 @@ function Invoke-DeepCleanup {
         # Verify cleanup by checking for remaining Augment data in databases
         foreach ($dbFile in $installation.DatabaseFiles) {
             if (Test-Path $dbFile) {
-                $remainingAugmentData = & sqlite3 $dbFile "SELECT COUNT(*) FROM ItemTable WHERE key LIKE '%augment%' OR value LIKE '%augment%';" 2>$null
-                if ($LASTEXITCODE -eq 0 -and $remainingAugmentData -and [int]$remainingAugmentData -gt 0) {
-                    Write-Warn "Still found $remainingAugmentData Augment-related records in: $dbFile"
+                $remainingCountSafe = Invoke-SafeSQLiteQuery -DatabasePath $dbFile -Query "SELECT COUNT(*) FROM ItemTable WHERE key LIKE '%augment%' OR value LIKE '%augment%';" -DefaultValue "0"
+                if ([int]$remainingCountSafe -gt 0) {
+                    Write-Warn "Still found $remainingCountSafe Augment-related records in: $dbFile"
                     if (-not $DryRun) {
                         # Additional cleanup for stubborn records
                         & sqlite3 $dbFile "DELETE FROM ItemTable WHERE key LIKE '%augment%' OR value LIKE '%augment%';" 2>$null
@@ -1170,21 +1279,12 @@ function Get-DatabaseIds {
             return $null
         }
 
-        $machineId = & sqlite3 $DatabasePath "SELECT value FROM ItemTable WHERE key = 'telemetry.machineId';" 2>$null
-        $deviceId = & sqlite3 $DatabasePath "SELECT value FROM ItemTable WHERE key = 'telemetry.devDeviceId';" 2>$null
-        $sqmId = & sqlite3 $DatabasePath "SELECT value FROM ItemTable WHERE key = 'telemetry.sqmId';" 2>$null
-        $serviceId = & sqlite3 $DatabasePath "SELECT value FROM ItemTable WHERE key = 'storage.serviceMachineId';" 2>$null
-
-        if ($LASTEXITCODE -ne 0) {
-            Write-Error "Failed to query database: $DatabasePath"
-            return $null
-        }
-
+        # Use safe query operations for all database values
         $ids = @{
-            MachineId = $machineId.Trim()
-            DeviceId = $deviceId.Trim()
-            SqmId = $sqmId.Trim()
-            ServiceId = $serviceId.Trim()
+            MachineId = Invoke-SafeSQLiteQuery -DatabasePath $DatabasePath -Query "SELECT value FROM ItemTable WHERE key = 'telemetry.machineId';" -DefaultValue ""
+            DeviceId = Invoke-SafeSQLiteQuery -DatabasePath $DatabasePath -Query "SELECT value FROM ItemTable WHERE key = 'telemetry.devDeviceId';" -DefaultValue ""
+            SqmId = Invoke-SafeSQLiteQuery -DatabasePath $DatabasePath -Query "SELECT value FROM ItemTable WHERE key = 'telemetry.sqmId';" -DefaultValue ""
+            ServiceId = Invoke-SafeSQLiteQuery -DatabasePath $DatabasePath -Query "SELECT value FROM ItemTable WHERE key = 'storage.serviceMachineId';" -DefaultValue ""
         }
 
         if ($VerboseOutput) {
@@ -1306,7 +1406,7 @@ function Show-ModificationSummary {
     Write-Host ""
     Write-Info "Config Files Modified: $($script:ModificationLog.ConfigFiles.Count) files"
     foreach ($configMod in $script:ModificationLog.ConfigFiles) {
-        Write-Success "  ✓ $($configMod.FilePath)"
+        Write-Success "  [OK] $($configMod.FilePath)"
         Write-Info "    Changes: $($configMod.Changes -join ', ')"
         Write-Info "    Modified: $($configMod.ModificationTime)"
     }
@@ -1314,7 +1414,7 @@ function Show-ModificationSummary {
     Write-Host ""
     Write-Info "Database Files Modified: $($script:ModificationLog.DatabaseFiles.Count) files"
     foreach ($dbMod in $script:ModificationLog.DatabaseFiles) {
-        Write-Success "  ✓ $($dbMod.FilePath)"
+        Write-Success "  [OK] $($dbMod.FilePath)"
         Write-Info "    Changes: $($dbMod.Changes -join ', ')"
         Write-Info "    Modified: $($dbMod.ModificationTime)"
         if ($dbMod.CleanupStats.AugmentRecords -gt 0) {
@@ -1339,11 +1439,11 @@ function Show-ModificationSummary {
     Write-Host ""
     Write-Info "=== DATA CONSISTENCY VERIFICATION ==="
     Write-Host ""
-    Write-Success "✓ All telemetry IDs are now 100% identical across all installations"
-    Write-Success "✓ VS Code and Cursor use the same device identifiers"
-    Write-Success "✓ Service IDs correctly mapped to device IDs"
-    Write-Success "✓ Timestamp formats are consistent and valid"
-    Write-Success "✓ All Augment traces have been completely removed"
+    Write-Success "[OK] All telemetry IDs are now 100% identical across all installations"
+    Write-Success "[OK] VS Code and Cursor use the same device identifiers"
+    Write-Success "[OK] Service IDs correctly mapped to device IDs"
+    Write-Success "[OK] Timestamp formats are consistent and valid"
+    Write-Success "[OK] All Augment traces have been completely removed"
 
     Write-Host ""
     Write-Info "================================================================"
