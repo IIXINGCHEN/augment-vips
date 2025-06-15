@@ -238,7 +238,7 @@ function Test-RemoteExecution {
 }
 
 # Load unified logging bootstrap first (required by ConfigLoader)
-$loggingBootstrapPath = Join-Path $script:PROJECT_ROOT "src\core\logging\logging_bootstrap.ps1"
+$loggingBootstrapPath = Join-Path (Join-Path (Join-Path $script:PROJECT_ROOT "src") "core") (Join-Path "logging" "logging_bootstrap.ps1")
 if (Test-Path $loggingBootstrapPath) {
     . $loggingBootstrapPath
     Ensure-LoggingAvailable -ScriptName "Installer"
@@ -261,7 +261,7 @@ try {
         $script:ConfigLoadError = "Remote execution mode - using embedded configuration"
         Write-Host "Remote execution detected - using embedded configuration patterns" -ForegroundColor Yellow
     } else {
-        $configLoaderPath = Join-Path $PROJECT_ROOT "src\core\ConfigurationManager.ps1"
+        $configLoaderPath = Join-Path (Join-Path $PROJECT_ROOT "src") (Join-Path "core" "ConfigurationManager.ps1")
         if (Test-Path $configLoaderPath) {
             . $configLoaderPath
             # Initialize configuration paths with project root if function exists
@@ -275,7 +275,7 @@ try {
                 $script:ConfigLoadError = "Configuration validation failed"
             }
         } else {
-            $script:ConfigLoadError = "ConfigLoader.ps1 not found"
+            $script:ConfigLoadError = "ConfigurationManager.ps1 not found"
         }
     }
 } catch {
@@ -294,7 +294,7 @@ try {
         Write-Host "Remote execution detected - process management module not available" -ForegroundColor Yellow
         Write-Host "Process detection will be skipped in remote execution mode" -ForegroundColor Gray
     } else {
-        $processManagerPath = Join-Path $PROJECT_ROOT "src\core\process\ProcessManager.ps1"
+        $processManagerPath = Join-Path (Join-Path (Join-Path $PROJECT_ROOT "src") "core") (Join-Path "process" "ProcessManager.ps1")
         if (Test-Path $processManagerPath) {
             . $processManagerPath
             $script:ProcessManagerLoaded = $true
@@ -311,7 +311,7 @@ try {
 $script:UnifiedLoggerLoaded = $false
 try {
     if (-not (Test-RemoteExecution)) {
-        $unifiedLoggerPath = Join-Path $PROJECT_ROOT "src\core\AugmentLogger.ps1"
+        $unifiedLoggerPath = Join-Path (Join-Path $PROJECT_ROOT "src") (Join-Path "core" "AugmentLogger.ps1")
         if (Test-Path $unifiedLoggerPath) {
             . $unifiedLoggerPath
             $script:UnifiedLoggerLoaded = $true
@@ -461,7 +461,7 @@ function Initialize-Environment {
     Write-AuditLog "INSTALLER_START" "Windows installer started with operation: $Operation"
 
     # Check if we're in the correct project structure (more flexible for remote execution)
-    $platformsDir = Join-Path $PROJECT_ROOT "src\platforms"
+    $platformsDir = Join-Path (Join-Path $PROJECT_ROOT "src") "platforms"
     $legacyPlatformsDir = Join-Path $PROJECT_ROOT "platforms"
 
     if (-not (Test-Path $platformsDir) -and -not (Test-Path $legacyPlatformsDir)) {
@@ -474,7 +474,7 @@ function Initialize-Environment {
             return $true
         } else {
             Write-LogError "Invalid project structure. Please run from the project root directory."
-            Write-LogError "Expected to find 'src\platforms' or 'platforms' directory in: $PROJECT_ROOT"
+            Write-LogError "Expected to find 'src/platforms' or 'platforms' directory in: $PROJECT_ROOT"
             return $false
         }
     } else {

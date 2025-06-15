@@ -35,30 +35,33 @@ $script:ScriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $script:ProjectRoot = $script:ScriptRoot
 
 # Import core modules
-$coreModulesPath = Join-Path $script:ProjectRoot "src\core"
+$coreModulesPath = Join-Path (Join-Path $script:ProjectRoot "src") "core"
 $loggerPath = Join-Path $coreModulesPath "AugmentLogger.ps1"
 $configPath = Join-Path $coreModulesPath "ConfigurationManager.ps1"
 
-# 导入统一核心模块
+# Import unified core modules
 $standardImportsPath = Join-Path $coreModulesPath "StandardImports.ps1"
 
 if (Test-Path $standardImportsPath) {
     . $standardImportsPath
-    Write-LogInfo "已加载统一核心模块"
+    Write-LogInfo "Unified core modules loaded successfully"
 } else {
-    # 紧急回退日志（仅在StandardImports不可用时使用）
+    # Emergency fallback logging (only used when StandardImports is unavailable)
     function Write-LogInfo { param([string]$Message) Write-Host "[INFO] $Message" -ForegroundColor White }
     function Write-LogSuccess { param([string]$Message) Write-Host "[SUCCESS] $Message" -ForegroundColor Green }
     function Write-LogWarning { param([string]$Message) Write-Host "[WARNING] $Message" -ForegroundColor Yellow }
     function Write-LogError { param([string]$Message) Write-Host "[ERROR] $Message" -ForegroundColor Red }
     function Write-LogDebug { param([string]$Message) if ($VerboseOutput) { Write-Host "[DEBUG] $Message" -ForegroundColor Gray } }
-    Write-LogWarning "StandardImports不可用，使用回退日志系统"
+    Write-LogWarning "StandardImports unavailable, using fallback logging system"
 }
 
 # Initialize configuration
 if (Test-Path $configPath) {
     . $configPath
-    Initialize-Configuration -ProjectRoot $script:ProjectRoot
+    # Initialize configuration if function exists
+    if (Get-Command "Initialize-Configuration" -ErrorAction SilentlyContinue) {
+        Initialize-Configuration -ProjectRoot $script:ProjectRoot
+    }
 }
 
 #region Helper Functions
@@ -69,7 +72,7 @@ function Show-Welcome {
         Shows welcome message and basic information
     #>
     Write-Host ""
-    Write-Host "🚀 " -NoNewline -ForegroundColor Blue
+    Write-Host ">> " -NoNewline -ForegroundColor Blue
     Write-Host "$script:Name v$script:Version" -ForegroundColor Cyan
     Write-Host "   Advanced VS Code Trial Account Reset Tool" -ForegroundColor Gray
     Write-Host ""
@@ -87,12 +90,12 @@ function Show-Help {
     Write-Host ""
     
     Write-Host "OPERATIONS:" -ForegroundColor Yellow
-    Write-Host "  quick      🎯 Quick reset (recommended for most users)" -ForegroundColor Green
-    Write-Host "  clean      🧹 Clean Augment data from VS Code" -ForegroundColor Cyan
-    Write-Host "  reset      🔄 Reset device fingerprint and telemetry" -ForegroundColor Cyan
-    Write-Host "  verify     ✅ Verify cleanup effectiveness" -ForegroundColor Cyan
-    Write-Host "  install    📦 Install required dependencies" -ForegroundColor Cyan
-    Write-Host "  help       ❓ Show this help message" -ForegroundColor Gray
+    Write-Host "  quick      [*] Quick reset (recommended for most users)" -ForegroundColor Green
+    Write-Host "  clean      [+] Clean Augment data from VS Code" -ForegroundColor Cyan
+    Write-Host "  reset      [~] Reset device fingerprint and telemetry" -ForegroundColor Cyan
+    Write-Host "  verify     [?] Verify cleanup effectiveness" -ForegroundColor Cyan
+    Write-Host "  install    [!] Install required dependencies" -ForegroundColor Cyan
+    Write-Host "  help       [H] Show this help message" -ForegroundColor Gray
     Write-Host ""
     
     Write-Host "OPTIONS:" -ForegroundColor Yellow
@@ -110,9 +113,9 @@ function Show-Help {
     Write-Host ""
     
     Write-Host "CLEANUP LEVELS:" -ForegroundColor Yellow
-    Write-Host "  safe         🟢 Minimal risk, basic trial data cleanup" -ForegroundColor Green
-    Write-Host "  standard     🟡 Balanced effectiveness and safety (default)" -ForegroundColor Yellow
-    Write-Host "  aggressive   🔴 Maximum effectiveness, higher risk" -ForegroundColor Red
+    Write-Host "  safe         [LOW]  Minimal risk, basic trial data cleanup" -ForegroundColor Green
+    Write-Host "  standard     [MED]  Balanced effectiveness and safety (default)" -ForegroundColor Yellow
+    Write-Host "  aggressive   [HIGH] Maximum effectiveness, higher risk" -ForegroundColor Red
     Write-Host ""
     
     Write-Host "For more information, visit: https://github.com/IIXINGCHEN/augment-vips" -ForegroundColor Blue
@@ -124,37 +127,45 @@ function Test-Prerequisites {
         Checks if required tools and dependencies are available
     #>
     Write-LogInfo "Checking prerequisites..."
-    
+
     $issues = @()
-    
+
     # Check PowerShell version
     if ($PSVersionTable.PSVersion.Major -lt 5) {
-        $issues += "PowerShell 5.1 or higher required"
+        $issues += "PowerShell 5.1 or higher required (current: $($PSVersionTable.PSVersion))"
     }
-    
+
     # Check for SQLite3
     try {
         $null = & sqlite3 -version 2>$null
-        Write-LogDebug "SQLite3 is available"
+        if ($LASTEXITCODE -eq 0) {
+            Write-LogDebug "SQLite3 is available"
+        } else {
+            $issues += "SQLite3 not working properly"
+        }
     } catch {
         $issues += "SQLite3 not found in PATH"
     }
-    
+
     # Check for required scripts
-    $toolsPath = Join-Path $script:ProjectRoot "src\tools"
-    $requiredTools = @(
-        "Reset-DeviceFingerprint.ps1",
-        "Clean-SessionData.ps1",
-        "Reset-AuthState.ps1"
-    )
-    
-    foreach ($tool in $requiredTools) {
-        $toolPath = Join-Path $toolsPath $tool
-        if (-not (Test-Path $toolPath)) {
-            $issues += "Required tool not found: $tool"
+    $toolsPath = Join-Path (Join-Path $script:ProjectRoot "src") "tools"
+    if (-not (Test-Path $toolsPath)) {
+        $issues += "Tools directory not found: $toolsPath"
+    } else {
+        $requiredTools = @(
+            "Reset-DeviceFingerprint.ps1",
+            "Clean-SessionData.ps1",
+            "Reset-AuthState.ps1"
+        )
+
+        foreach ($tool in $requiredTools) {
+            $toolPath = Join-Path $toolsPath $tool
+            if (-not (Test-Path $toolPath)) {
+                $issues += "Required tool not found: $tool"
+            }
         }
     }
-    
+
     if ($issues.Count -gt 0) {
         Write-LogError "Prerequisites check failed:"
         foreach ($issue in $issues) {
@@ -163,7 +174,7 @@ function Test-Prerequisites {
         Write-LogInfo "Run: .\Start-AugmentVIP.ps1 install"
         return $false
     }
-    
+
     Write-LogSuccess "Prerequisites check passed"
     return $true
 }
@@ -177,7 +188,7 @@ function Invoke-QuickReset {
     
     if (-not $Force) {
         Write-Host ""
-        Write-Host "🎯 " -NoNewline -ForegroundColor Blue
+        Write-Host "[*] " -NoNewline -ForegroundColor Blue
         Write-Host "Quick Reset Operation" -ForegroundColor Cyan
         Write-Host "This will reset your VS Code trial account data using safe methods." -ForegroundColor Gray
         Write-Host ""
@@ -200,7 +211,7 @@ function Invoke-QuickReset {
     foreach ($op in $operations) {
         Write-LogInfo "Executing: $($op.Name)"
         
-        $toolPath = Join-Path $script:ProjectRoot "src\tools\$($op.Script)"
+        $toolPath = Join-Path (Join-Path $script:ProjectRoot "src") (Join-Path "tools" $op.Script)
         if (Test-Path $toolPath) {
             try {
                 $params = @{}
@@ -226,12 +237,12 @@ function Invoke-QuickReset {
     
     if ($success) {
         Write-Host ""
-        Write-Host "✅ " -NoNewline -ForegroundColor Green
+        Write-Host "[SUCCESS] " -NoNewline -ForegroundColor Green
         Write-Host "Quick reset completed successfully!" -ForegroundColor Green
         Write-Host "Please restart VS Code to apply changes." -ForegroundColor Yellow
     } else {
         Write-Host ""
-        Write-Host "❌ " -NoNewline -ForegroundColor Red
+        Write-Host "[ERROR] " -NoNewline -ForegroundColor Red
         Write-Host "Quick reset completed with errors." -ForegroundColor Red
         Write-Host "Check the logs for details." -ForegroundColor Yellow
     }
@@ -246,7 +257,7 @@ function Invoke-CleanOperation {
     #>
     Write-LogInfo "Starting clean operation with level: $Level"
     
-    $toolPath = Join-Path $script:ProjectRoot "src\tools\Clean-SessionData.ps1"
+    $toolPath = Join-Path (Join-Path $script:ProjectRoot "src") (Join-Path "tools" "Clean-SessionData.ps1")
     if (-not (Test-Path $toolPath)) {
         Write-LogError "Clean tool not found: $toolPath"
         return $false
@@ -273,7 +284,7 @@ function Invoke-ResetOperation {
     #>
     Write-LogInfo "Starting reset operation with level: $Level"
     
-    $toolPath = Join-Path $script:ProjectRoot "src\tools\Reset-DeviceFingerprint.ps1"
+    $toolPath = Join-Path (Join-Path $script:ProjectRoot "src") (Join-Path "tools" "Reset-DeviceFingerprint.ps1")
     if (-not (Test-Path $toolPath)) {
         Write-LogError "Reset tool not found: $toolPath"
         return $false
@@ -300,7 +311,7 @@ function Invoke-VerifyOperation {
     #>
     Write-LogInfo "Starting verification operation..."
     
-    $testPath = Join-Path $script:ProjectRoot "test\Test-AugmentCleanupVerification.ps1"
+    $testPath = Join-Path (Join-Path $script:ProjectRoot "test") "Test-AugmentCleanupVerification.ps1"
     if (-not (Test-Path $testPath)) {
         Write-LogError "Verification test not found: $testPath"
         return $false

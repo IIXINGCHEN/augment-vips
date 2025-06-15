@@ -1,75 +1,78 @@
 @echo off
-chcp 65001 >nul
+chcp 65001 >nul 2>&1
 title Augment Anti-Detection Tools - Quick Launcher
+setlocal enabledelayedexpansion
 
 :MENU
 cls
+echo ================================================================
+echo                Augment Anti-Detection Tools
+echo                      Quick Launcher
+echo ================================================================
+echo  [Quick Operations]
+echo  1. Complete Fix (Recommended for beginners)
+echo  2. Smart Anti-Detection (Recommended for advanced users)
+echo  3. Reset Trial Account
 echo.
-echo ╔══════════════════════════════════════════════════════════════╗
-echo ║                Augment Anti-Detection Tools                  ║
-echo ║                      Quick Launcher                          ║
-echo ╠══════════════════════════════════════════════════════════════╣
-echo ║                                                              ║
-echo ║  【Quick Operations】                                        ║
-echo ║  1. Complete Fix (Recommended for beginners)                ║
-echo ║  2. Smart Anti-Detection (Recommended for advanced users)   ║
-echo ║  3. Reset Trial Account                                      ║
-echo ║                                                              ║
-echo ║  【Professional Tools】                                     ║
-echo ║  4. Session ID Isolation                                     ║
-echo ║  5. Cross-Account Delinking                                  ║
-echo ║  6. Device Fingerprint Reset                                 ║
-echo ║  7. Session Data Cleaning                                    ║
-echo ║  8. Network Fingerprint Spoofing                             ║
-echo ║  9. System Environment Reset                                 ║
-echo ║                                                              ║
-echo ║  【Other Options】                                           ║
-echo ║  A. Analyze Detection Risks                                  ║
-echo ║  H. Show Usage Guide                                         ║
-echo ║  0. Exit                                                     ║
-echo ║                                                              ║
-echo ╚══════════════════════════════════════════════════════════════╝
+echo  [Professional Tools]
+echo  4. Session ID Isolation
+echo  5. Cross-Account Delinking
+echo  6. Device Fingerprint Reset
+echo  7. Session Data Cleaning
+echo  8. Network Fingerprint Spoofing
+echo  9. System Environment Reset
 echo.
-set /p choice=Please select operation (1-9, A, H, 0): 
+echo  [Other Options]
+echo  A. Analyze Detection Risks
+echo  H. Show Usage Guide
+echo  0. Exit
+echo ================================================================
+echo.
+set /p choice="Please select an option (0-9, A, H): "
 
 if "%choice%"=="1" goto COMPLETE_FIX
 if "%choice%"=="2" goto SMART_ANTI_DETECTION
 if "%choice%"=="3" goto RESET_TRIAL
-if "%choice%"=="4" goto SESSION_ISOLATOR
+if "%choice%"=="4" goto SESSION_ISOLATION
 if "%choice%"=="5" goto CROSS_ACCOUNT_DELINK
-if "%choice%"=="6" goto RESET_DEVICE
-if "%choice%"=="7" goto CLEAN_SESSION
+if "%choice%"=="6" goto DEVICE_FINGERPRINT
+if "%choice%"=="7" goto SESSION_CLEANING
 if "%choice%"=="8" goto NETWORK_SPOOF
 if "%choice%"=="9" goto SYSTEM_RESET
 if /i "%choice%"=="A" goto ANALYZE_RISKS
-if /i "%choice%"=="H" goto SHOW_GUIDE
+if /i "%choice%"=="H" goto USAGE_GUIDE
 if "%choice%"=="0" goto EXIT
 
-echo Invalid selection, please try again...
+echo Invalid choice. Please try again.
 pause
 goto MENU
 
 :COMPLETE_FIX
 cls
-echo ╔══════════════════════════════════════════════════════════════╗
-echo ║                      Complete Fix                            ║
-echo ╚══════════════════════════════════════════════════════════════╝
-echo.
-echo This will execute complete anti-detection fix process, including:
+echo ================================================================
+echo                    Complete Fix Operation
+echo ================================================================
+echo This will perform a comprehensive fix including:
 echo - Trial account reset
-echo - Device fingerprint reset  
+echo - Device fingerprint reset
 echo - Session data cleaning
-echo - System environment reset
+echo - Telemetry modification
 echo.
-echo 1. Preview mode (Recommended)
-echo 2. Direct execution
-echo 3. Return to main menu
+echo Choose operation mode:
+echo 1. Preview operations first (recommended)
+echo 2. Execute directly
+echo 3. Back to main menu
 echo.
-set /p subchoice=Please select: 
+set /p subchoice="Enter your choice (1-3): "
 
 if "%subchoice%"=="1" (
     echo.
     echo Previewing operations...
+    if not exist "src\tools\Complete-Augment-Fix.ps1" (
+        echo Error: Complete-Augment-Fix.ps1 not found!
+        pause
+        goto COMPLETE_FIX
+    )
     powershell -ExecutionPolicy Bypass -File "src\tools\Complete-Augment-Fix.ps1" -DryRun
     echo.
     echo Preview completed! If confirmed, you can choose direct execution.
@@ -79,6 +82,11 @@ if "%subchoice%"=="1" (
 if "%subchoice%"=="2" (
     echo.
     echo Executing complete fix...
+    if not exist "src\tools\Complete-Augment-Fix.ps1" (
+        echo Error: Complete-Augment-Fix.ps1 not found!
+        pause
+        goto MENU
+    )
     powershell -ExecutionPolicy Bypass -File "src\tools\Complete-Augment-Fix.ps1"
     echo.
     echo Fix completed! Please restart VS Code/Cursor to apply changes.
@@ -87,39 +95,41 @@ if "%subchoice%"=="2" (
 )
 if "%subchoice%"=="3" goto MENU
 
-echo Invalid selection...
+echo Invalid choice. Please try again.
 pause
 goto COMPLETE_FIX
 
 :SMART_ANTI_DETECTION
 cls
-echo ╔══════════════════════════════════════════════════════════════╗
-echo ║                   Smart Anti-Detection                       ║
-echo ╚══════════════════════════════════════════════════════════════╝
+echo ================================================================
+echo                Smart Anti-Detection Operation
+echo ================================================================
+echo Choose threat level:
+echo 1. CONSERVATIVE - Basic protection
+echo 2. STANDARD - Balanced protection (recommended)
+echo 3. AGGRESSIVE - Maximum protection
+echo 4. Back to main menu
 echo.
-echo Select threat level:
-echo 1. Conservative mode (CONSERVATIVE) - Minimal impact
-echo 2. Standard mode (STANDARD) - Balanced effect
-echo 3. Aggressive mode (AGGRESSIVE) - Strong anti-detection (Recommended)
-echo 4. Nuclear mode (NUCLEAR) - Maximum intensity
-echo 5. Return to main menu
-echo.
-set /p level=Please select threat level: 
+set /p level="Enter your choice (1-4): "
 
 if "%level%"=="1" set THREAT_LEVEL=CONSERVATIVE
-if "%level%"=="2" set THREAT_LEVEL=STANDARD  
+if "%level%"=="2" set THREAT_LEVEL=STANDARD
 if "%level%"=="3" set THREAT_LEVEL=AGGRESSIVE
-if "%level%"=="4" set THREAT_LEVEL=NUCLEAR
-if "%level%"=="5" goto MENU
+if "%level%"=="4" goto MENU
 
 if not defined THREAT_LEVEL (
-    echo Invalid selection...
+    echo Invalid choice. Please try again.
     pause
     goto SMART_ANTI_DETECTION
 )
 
 echo.
 echo Executing %THREAT_LEVEL% level smart anti-detection...
+if not exist "src\tools\Advanced-Anti-Detection.ps1" (
+    echo Error: Advanced-Anti-Detection.ps1 not found!
+    pause
+    goto MENU
+)
 powershell -ExecutionPolicy Bypass -File "src\tools\Advanced-Anti-Detection.ps1" -Operation complete -ThreatLevel %THREAT_LEVEL%
 echo.
 echo Anti-detection completed!
@@ -128,111 +138,61 @@ goto MENU
 
 :RESET_TRIAL
 cls
-echo ╔══════════════════════════════════════════════════════════════╗
-echo ║                    Reset Trial Account                       ║
-echo ╚══════════════════════════════════════════════════════════════╝
+echo ================================================================
+echo                  Reset Trial Account
+echo ================================================================
+echo This will reset your trial account status.
 echo.
-echo 1. Preview reset operation
-echo 2. Execute reset
-echo 3. Return to main menu
+echo Choose operation:
+echo 1. Preview operations first
+echo 2. Execute directly
+echo 3. Back to main menu
 echo.
-set /p subchoice=Please select: 
+set /p subchoice="Enter your choice (1-3): "
 
 if "%subchoice%"=="1" (
     echo.
-    echo Previewing reset operation...
+    echo Previewing trial reset...
     powershell -ExecutionPolicy Bypass -File "src\tools\Reset-TrialAccount.ps1" -DryRun
+    echo.
+    echo Preview completed!
     pause
     goto RESET_TRIAL
 )
 if "%subchoice%"=="2" (
     echo.
-    echo Resetting trial account...
+    echo Executing trial reset...
     powershell -ExecutionPolicy Bypass -File "src\tools\Reset-TrialAccount.ps1"
     echo.
-    echo Reset completed!
+    echo Trial reset completed!
     pause
     goto MENU
 )
 if "%subchoice%"=="3" goto MENU
 
-echo Invalid selection...
+echo Invalid choice. Please try again.
 pause
 goto RESET_TRIAL
 
-:SESSION_ISOLATOR
-cls
-echo ╔══════════════════════════════════════════════════════════════╗
-echo ║                    Session ID Isolation                      ║
-echo ╚══════════════════════════════════════════════════════════════╝
+:SESSION_ISOLATION
 echo.
-echo 1. Analyze session correlation risks
-echo 2. Execute session isolation (HIGH level)
-echo 3. Execute session isolation (CRITICAL level)
-echo 4. Return to main menu
+echo Executing session ID isolation...
+powershell -ExecutionPolicy Bypass -File "src\tools\Isolate-SessionID.ps1"
 echo.
-set /p subchoice=Please select: 
-
-if "%subchoice%"=="1" (
-    powershell -ExecutionPolicy Bypass -File "src\tools\Session-ID-Isolator.ps1" -Operation analyze
-    pause
-    goto SESSION_ISOLATOR
-)
-if "%subchoice%"=="2" (
-    powershell -ExecutionPolicy Bypass -File "src\tools\Session-ID-Isolator.ps1" -Operation isolate -IsolationLevel HIGH
-    pause
-    goto MENU
-)
-if "%subchoice%"=="3" (
-    powershell -ExecutionPolicy Bypass -File "src\tools\Session-ID-Isolator.ps1" -Operation isolate -IsolationLevel CRITICAL
-    pause
-    goto MENU
-)
-if "%subchoice%"=="4" goto MENU
-
-echo Invalid selection...
+echo Session isolation completed!
 pause
-goto SESSION_ISOLATOR
+goto MENU
 
 :CROSS_ACCOUNT_DELINK
-cls
-echo ╔══════════════════════════════════════════════════════════════╗
-echo ║                  Cross-Account Delinking                     ║
-echo ╚══════════════════════════════════════════════════════════════╝
 echo.
-echo 1. Analyze correlation risks
-echo 2. Execute delinking (AGGRESSIVE level)
-echo 3. Execute delinking (NUCLEAR level)
-echo 4. Return to main menu
+echo Executing cross-account delinking...
+powershell -ExecutionPolicy Bypass -File "src\tools\Delink-CrossAccount.ps1"
 echo.
-set /p subchoice=Please select: 
-
-if "%subchoice%"=="1" (
-    powershell -ExecutionPolicy Bypass -File "src\tools\Cross-Account-Delinker.ps1" -Operation analyze
-    pause
-    goto CROSS_ACCOUNT_DELINK
-)
-if "%subchoice%"=="2" (
-    powershell -ExecutionPolicy Bypass -File "src\tools\Cross-Account-Delinker.ps1" -Operation delink -DelinkLevel AGGRESSIVE
-    pause
-    goto MENU
-)
-if "%subchoice%"=="3" (
-    powershell -ExecutionPolicy Bypass -File "src\tools\Cross-Account-Delinker.ps1" -Operation delink -DelinkLevel NUCLEAR
-    pause
-    goto MENU
-)
-if "%subchoice%"=="4" goto MENU
-
-echo Invalid selection...
+echo Cross-account delinking completed!
 pause
-goto CROSS_ACCOUNT_DELINK
+goto MENU
 
-:RESET_DEVICE
-cls
-echo ╔══════════════════════════════════════════════════════════════╗
-echo ║                 Device Fingerprint Reset                     ║
-echo ╚══════════════════════════════════════════════════════════════╝
+:DEVICE_FINGERPRINT
 echo.
 echo Resetting device fingerprint...
 powershell -ExecutionPolicy Bypass -File "src\tools\Reset-DeviceFingerprint.ps1"
@@ -241,11 +201,7 @@ echo Device fingerprint reset completed!
 pause
 goto MENU
 
-:CLEAN_SESSION
-cls
-echo ╔══════════════════════════════════════════════════════════════╗
-echo ║                   Session Data Cleaning                      ║
-echo ╚══════════════════════════════════════════════════════════════╝
+:SESSION_CLEANING
 echo.
 echo Cleaning session data...
 powershell -ExecutionPolicy Bypass -File "src\tools\Clean-SessionData.ps1"
@@ -255,69 +211,37 @@ pause
 goto MENU
 
 :NETWORK_SPOOF
-cls
-echo ╔══════════════════════════════════════════════════════════════╗
-echo ║                Network Fingerprint Spoofing                  ║
-echo ╚══════════════════════════════════════════════════════════════╝
 echo.
 echo Executing network fingerprint spoofing...
-powershell -ExecutionPolicy Bypass -File "src\tools\Network-Fingerprint-Spoof.ps1" -Operation spoof -SpoofLevel ADVANCED
+powershell -ExecutionPolicy Bypass -File "src\tools\Network-Spoof.ps1" -Operation spoof -SpoofLevel ADVANCED
 echo.
-echo Network fingerprint spoofing completed!
+echo Network spoofing completed!
 pause
 goto MENU
 
 :SYSTEM_RESET
-cls
-echo ╔══════════════════════════════════════════════════════════════╗
-echo ║                  System Environment Reset                    ║
-echo ╚══════════════════════════════════════════════════════════════╝
 echo.
-echo Warning: System environment reset will perform deep cleanup and may require administrator privileges.
+echo Resetting system environment...
+powershell -ExecutionPolicy Bypass -File "src\tools\Reset-SystemEnvironment.ps1"
 echo.
-echo 1. Preview reset operation
-echo 2. Execute reset (DEEP level)
-echo 3. Return to main menu
-echo.
-set /p subchoice=Please select: 
-
-if "%subchoice%"=="1" (
-    powershell -ExecutionPolicy Bypass -File "src\tools\System-Environment-Reset.ps1" -Operation complete -ResetLevel DEEP -DryRun
-    pause
-    goto SYSTEM_RESET
-)
-if "%subchoice%"=="2" (
-    powershell -ExecutionPolicy Bypass -File "src\tools\System-Environment-Reset.ps1" -Operation complete -ResetLevel DEEP
-    pause
-    goto MENU
-)
-if "%subchoice%"=="3" goto MENU
-
-echo Invalid selection...
-pause
-goto SYSTEM_RESET
-
-:ANALYZE_RISKS
-cls
-echo ╔══════════════════════════════════════════════════════════════╗
-echo ║                   Analyze Detection Risks                    ║
-echo ╚══════════════════════════════════════════════════════════════╝
-echo.
-echo Analyzing current detection risks...
-powershell -ExecutionPolicy Bypass -File "src\tools\Advanced-Anti-Detection.ps1" -Operation analyze -VerboseOutput
-echo.
+echo System environment reset completed!
 pause
 goto MENU
 
-:SHOW_GUIDE
-cls
-echo ╔══════════════════════════════════════════════════════════════╗
-echo ║                       Usage Guide                            ║
-echo ╚══════════════════════════════════════════════════════════════╝
+:ANALYZE_RISKS
+echo.
+echo Analyzing detection risks...
+powershell -ExecutionPolicy Bypass -File "src\tools\Analyze-DetectionRisks.ps1"
+echo.
+echo Risk analysis completed!
+pause
+goto MENU
+
+:USAGE_GUIDE
 echo.
 echo Opening usage guide...
-if exist "Anti-Detection-Tools-Guide.md" (
-    start "" "Anti-Detection-Tools-Guide.md"
+if exist "docs\usage-guide.txt" (
+    type "docs\usage-guide.txt"
 ) else (
     echo Usage guide file not found!
 )
@@ -325,14 +249,8 @@ pause
 goto MENU
 
 :EXIT
-cls
 echo.
 echo Thank you for using Augment Anti-Detection Tools!
 echo.
-echo Important reminders:
-echo - Please restart VS Code/Cursor after operations
-echo - Recommend running regularly for best results
-echo - Check usage guide if you encounter issues
-echo.
 pause
-exit
+exit /b 0

@@ -63,12 +63,25 @@ function Show-Menu {
 function Invoke-CompleteFix {
     Write-Host "`nExecuting complete fix..." -ForegroundColor Green
     Write-Host "This includes: trial account reset, device fingerprint reset, session data cleaning, etc." -ForegroundColor Yellow
-    
+
+    $scriptPath = Join-Path (Join-Path $PSScriptRoot "src") (Join-Path "tools" "Complete-Augment-Fix.ps1")
+    if (-not (Test-Path $scriptPath)) {
+        Write-Host "Error: Complete-Augment-Fix.ps1 not found at: $scriptPath" -ForegroundColor Red
+        Pause-AndReturn
+        return
+    }
+
     $confirm = Read-Host "`nPreview operations first? (Y/n)"
     if ($confirm -ne "n" -and $confirm -ne "N") {
         Write-Host "`n=== Preview Mode ===" -ForegroundColor Cyan
-        & "src\tools\Complete-Augment-Fix.ps1" -DryRun
-        
+        try {
+            & $scriptPath -DryRun
+        } catch {
+            Write-Host "Error during preview: $($_.Exception.Message)" -ForegroundColor Red
+            Pause-AndReturn
+            return
+        }
+
         $proceed = Read-Host "`nPreview completed, continue execution? (Y/n)"
         if ($proceed -eq "n" -or $proceed -eq "N") {
             Write-Host "Operation cancelled" -ForegroundColor Yellow
@@ -76,35 +89,68 @@ function Invoke-CompleteFix {
             return
         }
     }
-    
+
     Write-Host "`n=== Executing Fix ===" -ForegroundColor Green
-    & "src\tools\Complete-Augment-Fix.ps1"
-    Write-Host "`nFix completed! Please restart VS Code/Cursor to apply changes." -ForegroundColor Green
+    try {
+        & $scriptPath
+        Write-Host "`nFix completed! Please restart VS Code/Cursor to apply changes." -ForegroundColor Green
+    } catch {
+        Write-Host "Error during execution: $($_.Exception.Message)" -ForegroundColor Red
+    }
     Pause-AndReturn
 }
 
 function Invoke-SmartAntiDetection {
     Write-Host "`nExecuting smart anti-detection (aggressive mode)..." -ForegroundColor Green
-    & "src\tools\Advanced-Anti-Detection.ps1" -Operation complete -ThreatLevel AGGRESSIVE
-    Write-Host "`nAnti-detection completed!" -ForegroundColor Green
+
+    $scriptPath = Join-Path (Join-Path $PSScriptRoot "src") (Join-Path "tools" "Advanced-Anti-Detection.ps1")
+    if (-not (Test-Path $scriptPath)) {
+        Write-Host "Error: Advanced-Anti-Detection.ps1 not found at: $scriptPath" -ForegroundColor Red
+        Pause-AndReturn
+        return
+    }
+
+    try {
+        & $scriptPath -Operation complete -ThreatLevel AGGRESSIVE
+        Write-Host "`nAnti-detection completed!" -ForegroundColor Green
+    } catch {
+        Write-Host "Error during anti-detection: $($_.Exception.Message)" -ForegroundColor Red
+    }
     Pause-AndReturn
 }
 
 function Invoke-TrialReset {
     Write-Host "`nResetting trial account..." -ForegroundColor Green
-    
+
+    $scriptPath = Join-Path (Join-Path $PSScriptRoot "src") (Join-Path "tools" "Reset-TrialAccount.ps1")
+    if (-not (Test-Path $scriptPath)) {
+        Write-Host "Error: Reset-TrialAccount.ps1 not found at: $scriptPath" -ForegroundColor Red
+        Pause-AndReturn
+        return
+    }
+
     $preview = Read-Host "Preview operations first? (Y/n)"
     if ($preview -ne "n" -and $preview -ne "N") {
-        & "src\tools\Reset-TrialAccount.ps1" -DryRun
+        try {
+            & $scriptPath -DryRun
+        } catch {
+            Write-Host "Error during preview: $($_.Exception.Message)" -ForegroundColor Red
+            Pause-AndReturn
+            return
+        }
         $proceed = Read-Host "`nContinue execution? (Y/n)"
         if ($proceed -eq "n" -or $proceed -eq "N") {
             Pause-AndReturn
             return
         }
     }
-    
-    & "src\tools\Reset-TrialAccount.ps1"
-    Write-Host "`nTrial account reset completed!" -ForegroundColor Green
+
+    try {
+        & $scriptPath
+        Write-Host "`nTrial account reset completed!" -ForegroundColor Green
+    } catch {
+        Write-Host "Error during reset: $($_.Exception.Message)" -ForegroundColor Red
+    }
     Pause-AndReturn
 }
 
