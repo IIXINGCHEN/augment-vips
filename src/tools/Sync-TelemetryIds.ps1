@@ -6,28 +6,18 @@
 [CmdletBinding()]
 param(
     [switch]$DryRun = $false,
-    [switch]$Verbose = $false,
+    [switch]$VerboseOutput = $false,
     [switch]$Force = $false,
     [string]$TargetPath = "",
     [switch]$GenerateNew = $false
 )
 
-# Import dependencies
-$scriptPath = Split-Path -Parent $MyInvocation.MyCommand.Path
-$coreModulesPath = Split-Path $scriptPath -Parent | Join-Path -ChildPath "core"
-$loggerPath = Join-Path $coreModulesPath "AugmentLogger.ps1"
-
-if (Test-Path $loggerPath) {
-    . $loggerPath
-    Initialize-AugmentLogger -LogDirectory "logs" -LogFileName "telemetry_sync.log" -LogLevel "INFO"
-} else {
-    # Fallback logging
-    function Write-LogInfo { param([string]$Message) Write-Host "[INFO] $Message" -ForegroundColor White }
-    function Write-LogSuccess { param([string]$Message) Write-Host "[SUCCESS] $Message" -ForegroundColor Green }
-    function Write-LogWarning { param([string]$Message) Write-Host "[WARNING] $Message" -ForegroundColor Yellow }
-    function Write-LogError { param([string]$Message) Write-Host "[ERROR] $Message" -ForegroundColor Red }
-    function Write-LogDebug { param([string]$Message) if ($Verbose) { Write-Host "[DEBUG] $Message" -ForegroundColor Gray } }
-}
+# Standalone logging functions - no external dependencies
+function Write-LogInfo { param([string]$Message) Write-Host "[INFO] $Message" -ForegroundColor White }
+function Write-LogSuccess { param([string]$Message) Write-Host "[SUCCESS] $Message" -ForegroundColor Green }
+function Write-LogWarning { param([string]$Message) Write-Host "[WARNING] $Message" -ForegroundColor Yellow }
+function Write-LogError { param([string]$Message) Write-Host "[ERROR] $Message" -ForegroundColor Red }
+function Write-LogDebug { param([string]$Message) if ($VerboseOutput) { Write-Host "[DEBUG] $Message" -ForegroundColor Gray } }
 
 # Set error handling
 $ErrorActionPreference = "Stop"
@@ -280,7 +270,7 @@ function Update-DatabaseTelemetry {
     .SYNOPSIS
         Updates telemetry data in SQLite database
     .DESCRIPTION
-        Synchronizes telemetry IDs in VS Code database files
+        Synchronizes telemetry IDs in VS Code database files with retry logic for locked files
     .PARAMETER DatabasePath
         Path to the SQLite database file
     .PARAMETER TelemetryIds
@@ -307,6 +297,38 @@ function Update-DatabaseTelemetry {
         if ($DryRun) {
             Write-LogInfo "DRY RUN: Would update database $DatabasePath"
             return $true
+        }
+
+        # Check if file is accessible
+        $maxRetries = 3
+        $retryDelay = 2
+        $success = $false
+
+        for ($attempt = 1; $attempt -le $maxRetries; $attempt++) {
+            try {
+                # Test database access with a simple query
+                $testResult = & sqlite3 $DatabasePath "SELECT COUNT(*) FROM ItemTable LIMIT 1;" 2>&1
+                if ($LASTEXITCODE -eq 0) {
+                    Write-LogDebug "Database access successful on attempt $attempt"
+                    $success = $true
+                    break
+                } else {
+                    Write-LogWarning "Database access failed on attempt $attempt`: $testResult"
+                }
+            } catch {
+                Write-LogWarning "Database access exception on attempt $attempt`: $($_.Exception.Message)"
+            }
+
+            if ($attempt -lt $maxRetries) {
+                Write-LogInfo "Waiting $retryDelay seconds before retry..."
+                Start-Sleep -Seconds $retryDelay
+            }
+        }
+
+        if (-not $success) {
+            Write-LogError "Cannot access database after $maxRetries attempts: $DatabasePath"
+            Write-LogWarning "Database may be locked by running VS Code/Cursor processes"
+            return $false
         }
 
         # Create backup
@@ -461,16 +483,25 @@ function Get-VSCodeInstallations {
                 }
             }
 
-            # Find database files
+            # Find database files - include both main and workspace databases
             $dbPaths = @(
-                "$path\User\workspaceStorage\*\state.vscdb",
-                "$path\User\globalStorage\*\state.vscdb"
+                "$path\User\globalStorage\state.vscdb",           # Main database
+                "$path\User\workspaceStorage\*\state.vscdb",      # Workspace databases
+                "$path\User\globalStorage\*\state.vscdb"          # Extension databases
             )
 
             foreach ($dbPath in $dbPaths) {
-                $dbFiles = Get-ChildItem -Path $dbPath -ErrorAction SilentlyContinue
-                foreach ($dbFile in $dbFiles) {
-                    $installation.DatabaseFiles += $dbFile.FullName
+                if ($dbPath -like "*\*\*") {
+                    # Pattern with wildcards - use Get-ChildItem
+                    $dbFiles = Get-ChildItem -Path $dbPath -ErrorAction SilentlyContinue
+                    foreach ($dbFile in $dbFiles) {
+                        $installation.DatabaseFiles += $dbFile.FullName
+                    }
+                } else {
+                    # Direct path - check if file exists
+                    if (Test-Path $dbPath) {
+                        $installation.DatabaseFiles += $dbPath
+                    }
                 }
             }
 

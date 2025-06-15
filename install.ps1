@@ -264,9 +264,11 @@ try {
         $configLoaderPath = Join-Path $PROJECT_ROOT "src\core\ConfigurationManager.ps1"
         if (Test-Path $configLoaderPath) {
             . $configLoaderPath
-            # Initialize configuration paths with project root
-            Initialize-ConfigPaths $PROJECT_ROOT
-            if (Load-AugmentConfig) {
+            # Initialize configuration paths with project root if function exists
+            if (Get-Command "Initialize-ConfigPaths" -ErrorAction SilentlyContinue) {
+                Initialize-ConfigPaths $PROJECT_ROOT
+            }
+            if ((Get-Command "Load-AugmentConfig" -ErrorAction SilentlyContinue) -and (Load-AugmentConfig)) {
                 $script:UseUnifiedConfig = $true
                 Write-Host "✓ Unified configuration loaded successfully" -ForegroundColor Green
             } else {
@@ -329,8 +331,8 @@ try {
 function Write-AuditLog {
     param([string]$Action, [string]$Details)
 
-    if ($script:UnifiedLoggerLoaded) {
-        # Use unified logger's Write-AugmentLog function directly to avoid recursion
+    if ($script:UnifiedLoggerLoaded -and (Get-Command "Write-AugmentLog" -ErrorAction SilentlyContinue)) {
+        # Use unified logger's Write-AugmentLog function if available
         Write-AugmentLog -Message "$Action - $Details" -Level "INFO" -Category "AUDIT"
     } else {
         # Fallback for when unified logger not available
@@ -428,8 +430,8 @@ function Initialize-Environment {
             $logFileName = "${SCRIPT_NAME}_${timestamp}.log"
             $auditFileName = "${SCRIPT_NAME}_audit_${timestamp}.log"
 
-            # Initialize the unified logger
-            if (Initialize-AugmentLogger -LogDirectory $logDir -LogFileName $logFileName) {
+            # Initialize the unified logger if available
+            if ((Get-Command "Initialize-AugmentLogger" -ErrorAction SilentlyContinue) -and (Initialize-AugmentLogger -LogDirectory $logDir -LogFileName $logFileName)) {
                 Write-LogInfo "Unified logging system initialized successfully"
                 $script:LogFile = Join-Path $logDir $logFileName
                 $script:AuditLogFile = Join-Path $logDir $auditFileName
@@ -1855,13 +1857,24 @@ function Invoke-EmbeddedDatabaseCleaning {
 
     foreach ($basePath in $VSCodePaths) {
         $searchPaths = @(
-            "User\workspaceStorage\*\state.vscdb",
-            "User\globalStorage\*\state.vscdb"
+            "User\globalStorage\state.vscdb",           # Main database
+            "User\workspaceStorage\*\state.vscdb",      # Workspace databases
+            "User\globalStorage\*\state.vscdb"          # Extension databases
         )
 
         foreach ($searchPath in $searchPaths) {
             $fullPath = Join-Path $basePath $searchPath
-            $files = Get-ChildItem -Path $fullPath -ErrorAction SilentlyContinue
+            if ($searchPath -like "*\*\*") {
+                # Pattern with wildcards - use Get-ChildItem
+                $files = Get-ChildItem -Path $fullPath -ErrorAction SilentlyContinue
+            } else {
+                # Direct path - check if file exists and create array
+                if (Test-Path $fullPath) {
+                    $files = @(Get-Item $fullPath)
+                } else {
+                    $files = @()
+                }
+            }
 
             foreach ($file in $files) {
                 try {
@@ -2177,7 +2190,38 @@ function Invoke-EmbeddedTelemetryModification {
     $totalModified = 0
     $totalErrors = 0
 
+    # Generate unified telemetry IDs for consistency across all files
+    $unifiedIds = @{
+        MachineId = ""
+        DeviceId = ""
+        SqmId = ""
+        ServiceMachineId = ""
+        FirstSessionDate = 0
+        LastSessionDate = 0
+        CurrentSessionDate = 0
+    }
+
+    # Generate cryptographically secure IDs
+    $machineIdBytes = New-Object byte[] 32
+    [System.Security.Cryptography.RNGCryptoServiceProvider]::Create().GetBytes($machineIdBytes)
+    $unifiedIds.MachineId = ($machineIdBytes | ForEach-Object { $_.ToString("x2") }) -join ""
+    $unifiedIds.DeviceId = [System.Guid]::NewGuid().ToString()
+    $unifiedIds.SqmId = [System.Guid]::NewGuid().ToString().ToUpper()
+    $unifiedIds.ServiceMachineId = [System.Guid]::NewGuid().ToString()
+
+    # Generate session timestamps - use current real time
+    $currentTime = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
+    $unifiedIds.FirstSessionDate = $currentTime
+    $unifiedIds.LastSessionDate = $currentTime
+    $unifiedIds.CurrentSessionDate = $currentTime
+
+    Write-LogInfo "Generated unified telemetry IDs:"
+    Write-LogInfo "  Machine ID: $($unifiedIds.MachineId)"
+    Write-LogInfo "  Device ID: $($unifiedIds.DeviceId)"
+    Write-LogInfo "  SQM ID: $($unifiedIds.SqmId)"
+
     foreach ($basePath in $VSCodePaths) {
+        # Process configuration files
         $searchPaths = @(
             "User\storage.json",
             "User\globalStorage\storage.json"
@@ -2275,9 +2319,94 @@ function Invoke-EmbeddedTelemetryModification {
                 }
             }
         }
+
+        # Process database files for telemetry synchronization
+        Write-LogInfo "Synchronizing telemetry data in databases for: $basePath"
+        $dbPaths = @(
+            "$basePath\User\globalStorage\state.vscdb",
+            "$basePath\User\workspaceStorage\*\state.vscdb"
+        )
+
+        foreach ($dbPattern in $dbPaths) {
+            $dbFiles = Get-ChildItem -Path $dbPattern -ErrorAction SilentlyContinue
+            foreach ($dbFile in $dbFiles) {
+                try {
+                    if ($DryRun) {
+                        Write-LogInfo "DRY RUN: Would synchronize telemetry in database: $($dbFile.FullName)"
+                        $totalModified++
+                    } else {
+                        # Create backup
+                        $timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
+                        $backupFile = "$($dbFile.FullName).telemetry_backup_$timestamp"
+                        Copy-Item $dbFile.FullName $backupFile
+                        Write-LogDebug "Database backup created: $backupFile"
+
+                        # Check database accessibility with retry logic
+                        $maxRetries = 3
+                        $retryDelay = 2
+                        $dbAccessible = $false
+
+                        for ($attempt = 1; $attempt -le $maxRetries; $attempt++) {
+                            try {
+                                # Test database access with a simple query
+                                $testResult = & sqlite3 $dbFile.FullName "SELECT COUNT(*) FROM ItemTable LIMIT 1;" 2>&1
+                                if ($LASTEXITCODE -eq 0) {
+                                    Write-LogDebug "Database access successful on attempt $attempt for: $($dbFile.FullName)"
+                                    $dbAccessible = $true
+                                    break
+                                } else {
+                                    Write-LogWarning "Database access failed on attempt $attempt for $($dbFile.FullName): $testResult"
+                                }
+                            } catch {
+                                Write-LogWarning "Database access exception on attempt $attempt for $($dbFile.FullName): $($_.Exception.Message)"
+                            }
+
+                            if ($attempt -lt $maxRetries) {
+                                Write-LogDebug "Waiting $retryDelay seconds before retry..."
+                                Start-Sleep -Seconds $retryDelay
+                            }
+                        }
+
+                        if (-not $dbAccessible) {
+                            Write-LogWarning "Cannot access database after $maxRetries attempts: $($dbFile.FullName)"
+                            Write-LogWarning "Database may be locked by running VS Code/Cursor processes - skipping"
+                            $totalErrors++
+                            continue
+                        }
+
+                        # Update/Insert telemetry fields using unified IDs
+                        $updateQueries = @(
+                            "INSERT OR REPLACE INTO ItemTable (key, value) VALUES ('telemetry.machineId', '$($unifiedIds.MachineId)');",
+                            "INSERT OR REPLACE INTO ItemTable (key, value) VALUES ('telemetry.devDeviceId', '$($unifiedIds.DeviceId)');",
+                            "INSERT OR REPLACE INTO ItemTable (key, value) VALUES ('telemetry.sqmId', '$($unifiedIds.SqmId)');",
+                            "INSERT OR REPLACE INTO ItemTable (key, value) VALUES ('storage.serviceMachineId', '$($unifiedIds.ServiceMachineId)');",
+                            "INSERT OR REPLACE INTO ItemTable (key, value) VALUES ('telemetry.firstSessionDate', '$($unifiedIds.FirstSessionDate)');",
+                            "INSERT OR REPLACE INTO ItemTable (key, value) VALUES ('telemetry.lastSessionDate', '$($unifiedIds.LastSessionDate)');",
+                            "INSERT OR REPLACE INTO ItemTable (key, value) VALUES ('telemetry.currentSessionDate', '$($unifiedIds.CurrentSessionDate)');"
+                        )
+
+                        foreach ($query in $updateQueries) {
+                            $result = & sqlite3 $dbFile.FullName $query 2>&1
+                            if ($LASTEXITCODE -ne 0) {
+                                Write-LogWarning "Failed to execute database query: $query"
+                                Write-LogWarning "SQLite error: $result"
+                                $totalErrors++
+                            }
+                        }
+
+                        Write-LogSuccess "Database telemetry synchronized: $($dbFile.FullName)"
+                        $totalModified++
+                    }
+                } catch {
+                    Write-LogError "Exception synchronizing database $($dbFile.FullName): $($_.Exception.Message)"
+                    $totalErrors++
+                }
+            }
+        }
     }
 
     Write-LogSuccess "Telemetry modification completed. Modified: $totalModified, Errors: $totalErrors"
+    Write-LogInfo "All telemetry IDs have been synchronized across configuration files and databases"
     return ($totalErrors -eq 0)
 }
 
