@@ -39,17 +39,20 @@ $coreModulesPath = Join-Path $script:ProjectRoot "src\core"
 $loggerPath = Join-Path $coreModulesPath "AugmentLogger.ps1"
 $configPath = Join-Path $coreModulesPath "ConfigurationManager.ps1"
 
-# Initialize logging
-if (Test-Path $loggerPath) {
-    . $loggerPath
-    Initialize-AugmentLogger -LogDirectory "logs" -LogFileName "augment_vip.log" -LogLevel "INFO"
+# 导入统一核心模块
+$standardImportsPath = Join-Path $coreModulesPath "StandardImports.ps1"
+
+if (Test-Path $standardImportsPath) {
+    . $standardImportsPath
+    Write-LogInfo "已加载统一核心模块"
 } else {
-    # Fallback logging
+    # 紧急回退日志（仅在StandardImports不可用时使用）
     function Write-LogInfo { param([string]$Message) Write-Host "[INFO] $Message" -ForegroundColor White }
     function Write-LogSuccess { param([string]$Message) Write-Host "[SUCCESS] $Message" -ForegroundColor Green }
     function Write-LogWarning { param([string]$Message) Write-Host "[WARNING] $Message" -ForegroundColor Yellow }
     function Write-LogError { param([string]$Message) Write-Host "[ERROR] $Message" -ForegroundColor Red }
     function Write-LogDebug { param([string]$Message) if ($VerboseOutput) { Write-Host "[DEBUG] $Message" -ForegroundColor Gray } }
+    Write-LogWarning "StandardImports不可用，使用回退日志系统"
 }
 
 # Initialize configuration

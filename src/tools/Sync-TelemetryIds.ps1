@@ -436,29 +436,42 @@ function Update-StorageTelemetry {
 function Get-VSCodeInstallations {
     <#
     .SYNOPSIS
-        Discovers VS Code and related editor installations
+        Discovers VS Code and related editor installations (统一版本)
     .DESCRIPTION
-        Scans common installation paths for VS Code, Cursor, and other editors
+        使用统一的路径发现逻辑，返回标准格式的安装信息
     .EXAMPLE
         Get-VSCodeInstallations
     #>
     [CmdletBinding()]
     param()
 
-    $installations = @()
-    $appData = $env:APPDATA
-    $localAppData = $env:LOCALAPPDATA
+    # 使用统一的安装发现函数
+    if (Get-Command Get-UnifiedVSCodeInstallations -ErrorAction SilentlyContinue) {
+        Write-LogDebug "使用统一安装发现函数"
+        return Get-UnifiedVSCodeInstallations
+    } else {
+        # 回退实现（保持兼容性）
+        Write-LogWarning "统一安装发现函数不可用，使用回退实现"
 
-    $searchPaths = @(
-        "$appData\Code",
-        "$appData\Cursor",
-        "$appData\Code - Insiders",
-        "$appData\Code - Exploration",
-        "$localAppData\Code",
-        "$localAppData\Cursor",
-        "$localAppData\Code - Insiders",
-        "$localAppData\VSCodium"
-    )
+        $installations = @()
+
+        # 使用统一路径获取函数
+        if ($Global:UtilitiesAvailable -and (Get-Command Get-StandardVSCodePaths -ErrorAction SilentlyContinue)) {
+            $pathInfo = Get-StandardVSCodePaths
+            $searchPaths = $pathInfo.VSCodeStandard + $pathInfo.CursorPaths
+        } else {
+            # 最终回退路径列表
+            $searchPaths = @(
+                "$env:APPDATA\Code",
+                "$env:APPDATA\Cursor",
+                "$env:APPDATA\Code - Insiders",
+                "$env:APPDATA\Code - Exploration",
+                "$env:LOCALAPPDATA\Code",
+                "$env:LOCALAPPDATA\Cursor",
+                "$env:LOCALAPPDATA\Code - Insiders",
+                "$env:LOCALAPPDATA\VSCodium"
+            )
+        }
 
     foreach ($path in $searchPaths) {
         if (Test-Path $path) {

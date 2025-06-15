@@ -8,9 +8,10 @@ param(
     [switch]$DryRun = $false,
     [switch]$Verbose = $false,
     [switch]$SkipBackup = $false,
-    [ValidateSet("complete", "conservative", "aggressive", "strict")]
+    [ValidateSet("complete", "conservative", "aggressive", "strict", "plugin-safe")]
     [string]$Mode = "complete",
-    [switch]$Force = $false
+    [switch]$Force = $false,
+    [switch]$PreservePlugin = $false
 )
 
 # Import dependencies
@@ -182,38 +183,53 @@ function Get-CleanupModules {
         Gets the list of cleanup modules to execute
     .DESCRIPTION
         Returns array of cleanup modules with their configuration
+    .PARAMETER Mode
+        Cleanup mode to determine which modules to include
     .EXAMPLE
-        Get-CleanupModules
+        Get-CleanupModules -Mode "plugin-safe"
     #>
     [CmdletBinding()]
-    param()
-    
-    return @(
+    param(
+        [string]$CleanupMode = "complete"
+    )
+
+    $allModules = @(
         @{
             Name = "Device Fingerprint Reset"
             Script = "Reset-DeviceFingerprint.ps1"
             Description = "Resets all device telemetry IDs and session timestamps"
             Critical = $true
+            PluginSafe = $true
         },
         @{
             Name = "Encrypted Session Cleaner"
             Script = "Clean-SessionData.ps1"
             Description = "Removes all encrypted session data and authentication tokens"
             Critical = $true
+            PluginSafe = $false
         },
         @{
             Name = "Authentication State Reset"
             Script = "Reset-AuthState.ps1"
             Description = "Clears all Augment authentication states and user session data"
             Critical = $true
+            PluginSafe = $false
         },
         @{
             Name = "Workspace Binding Cleaner"
             Script = "Clean-WorkspaceBinding.ps1"
             Description = "Removes project-specific tracking and workspace associations"
             Critical = $false
+            PluginSafe = $true
         }
     )
+
+    # Filter modules based on mode
+    if ($CleanupMode -eq "plugin-safe" -or $PreservePlugin) {
+        return $allModules | Where-Object { $_.PluginSafe -eq $true }
+    } else {
+        return $allModules
+    }
 }
 
 function Invoke-CleanupModule {
@@ -249,9 +265,10 @@ function Invoke-CleanupModule {
         if ($DryRun) { $params += "-DryRun" }
         if ($Verbose) { $params += "-Verbose" }
         if ($Force) { $params += "-Force" }
-        
+        if ($PreservePlugin -or $Mode -eq "plugin-safe") { $params += "-PreservePlugin" }
+
         $startTime = Get-Date
-        
+
         # Execute the module script
         $fullScriptPath = Join-Path $scriptPath $ScriptPath
         & powershell -ExecutionPolicy Bypass -File $fullScriptPath @params
@@ -387,10 +404,15 @@ function Start-MasterCleanupProcess {
         Invoke-PreCleanupAnalysis
     }
     
-    # Get cleanup modules
-    $modules = Get-CleanupModules
+    # Get cleanup modules based on mode
+    $modules = Get-CleanupModules -CleanupMode $Mode
     $results = @()
-    
+
+    if ($PreservePlugin -or $Mode -eq "plugin-safe") {
+        Write-LogInfo "PLUGIN-SAFE MODE: Only executing plugin-safe cleanup modules"
+        Write-LogWarning "Some modules will be skipped to preserve Augment plugin functionality"
+    }
+
     Write-LogInfo "Starting cleanup sequence with $($modules.Count) modules..."
     
     # Execute each module

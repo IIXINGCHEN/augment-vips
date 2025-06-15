@@ -7,24 +7,26 @@
 param(
     [switch]$DryRun = $false,
     [switch]$Verbose = $false,
-    [switch]$Force = $false
+    [switch]$Force = $false,
+    [switch]$PreservePlugin = $false
 )
 
-# Import dependencies
+# Import unified core modules
 $scriptPath = Split-Path -Parent $MyInvocation.MyCommand.Path
 $coreModulesPath = Split-Path $scriptPath -Parent | Join-Path -ChildPath "core"
-$loggerPath = Join-Path $coreModulesPath "AugmentLogger.ps1"
+$standardImportsPath = Join-Path $coreModulesPath "StandardImports.ps1"
 
-if (Test-Path $loggerPath) {
-    . $loggerPath
-    Initialize-AugmentLogger -LogDirectory "logs" -LogFileName "device_fingerprint_reset.log" -LogLevel "INFO"
+if (Test-Path $standardImportsPath) {
+    . $standardImportsPath
+    Write-LogInfo "Unified core modules loaded successfully"
 } else {
-    # Fallback logging if main logger not available
+    # Emergency fallback logging (only when StandardImports unavailable)
     function Write-LogInfo { param([string]$Message) Write-Host "[INFO] $Message" -ForegroundColor White }
     function Write-LogSuccess { param([string]$Message) Write-Host "[SUCCESS] $Message" -ForegroundColor Green }
     function Write-LogWarning { param([string]$Message) Write-Host "[WARNING] $Message" -ForegroundColor Yellow }
     function Write-LogError { param([string]$Message) Write-Host "[ERROR] $Message" -ForegroundColor Red }
     function Write-LogDebug { param([string]$Message) if ($Verbose) { Write-Host "[DEBUG] $Message" -ForegroundColor Gray } }
+    Write-LogWarning "StandardImports unavailable, using fallback logging system"
 }
 
 # Set error handling
@@ -191,7 +193,11 @@ function Update-DatabaseFingerprint {
     
     try {
         Write-LogInfo "Updating fingerprint in database: $DatabasePath"
-        
+
+        if ($PreservePlugin) {
+            Write-LogInfo "PLUGIN-SAFE MODE: Preserving Augment plugin data in $DatabasePath"
+        }
+
         if ($DryRun) {
             Write-LogInfo "DRY RUN: Would update database $DatabasePath"
             return $true
@@ -224,7 +230,23 @@ function Update-DatabaseFingerprint {
         foreach ($query in $insertQueries) {
             & sqlite3 $DatabasePath $query
         }
-        
+
+        # In plugin-safe mode, avoid clearing Augment-related data that might be needed
+        if (-not $PreservePlugin) {
+            # Clear potentially problematic data only in full cleanup mode
+            $cleanupQueries = @(
+                "DELETE FROM ItemTable WHERE key LIKE '%augment%' AND key NOT LIKE '%augment.vscode-augment%';",
+                "DELETE FROM ItemTable WHERE key LIKE '%terminal.history%';"
+            )
+
+            foreach ($query in $cleanupQueries) {
+                & sqlite3 $DatabasePath $query
+            }
+            Write-LogInfo "Cleared additional tracking data from database"
+        } else {
+            Write-LogInfo "Skipped additional cleanup to preserve plugin functionality"
+        }
+
         Write-LogSuccess "Updated fingerprint in database: $DatabasePath"
         return $true
         
@@ -241,48 +263,62 @@ function Update-DatabaseFingerprint {
 function Get-VSCodeInstallations {
     <#
     .SYNOPSIS
-        Discovers VS Code and related editor installations
+        Discovers VS Code and related editor installations (unified version)
     .DESCRIPTION
-        Scans common installation paths for VS Code, Cursor, and other editors
+        Uses unified path discovery logic, returns standardized installation information
     .EXAMPLE
         Get-VSCodeInstallations
     #>
     [CmdletBinding()]
     param()
-    
-    $installations = @()
-    $appData = $env:APPDATA
-    $localAppData = $env:LOCALAPPDATA
-    
-    $searchPaths = @(
-        "$appData\Code",
-        "$appData\Cursor", 
-        "$appData\Code - Insiders",
-        "$appData\Code - Exploration",
-        "$localAppData\Code",
-        "$localAppData\Cursor",
-        "$localAppData\Code - Insiders",
-        "$localAppData\VSCodium"
-    )
-    
-    foreach ($path in $searchPaths) {
-        if (Test-Path $path) {
-            $installations += @{
-                Path = $path
-                Type = Split-Path $path -Leaf
-                StorageFiles = @(
-                    (Join-Path $path "User\storage.json"),
-                    (Join-Path $path "User\globalStorage\storage.json")
-                )
-                DatabasePaths = @(
-                    "$path\User\workspaceStorage\*\state.vscdb",
-                    "$path\User\globalStorage\*\state.vscdb"
-                )
+
+    # Use unified installation discovery function
+    if (Get-Command Get-UnifiedVSCodeInstallations -ErrorAction SilentlyContinue) {
+        Write-LogDebug "Using unified installation discovery function"
+        return Get-UnifiedVSCodeInstallations
+    } else {
+        # Fallback implementation (maintain compatibility)
+        Write-LogWarning "Unified installation discovery function unavailable, using fallback implementation"
+
+        $installations = @()
+
+        # Use unified path retrieval function
+        if ($Global:UtilitiesAvailable -and (Get-Command Get-StandardVSCodePaths -ErrorAction SilentlyContinue)) {
+            $pathInfo = Get-StandardVSCodePaths
+            $searchPaths = $pathInfo.VSCodeStandard + $pathInfo.CursorPaths
+        } else {
+            # Final fallback path list
+            $searchPaths = @(
+                "$env:APPDATA\Code",
+                "$env:APPDATA\Cursor",
+                "$env:APPDATA\Code - Insiders",
+                "$env:APPDATA\Code - Exploration",
+                "$env:LOCALAPPDATA\Code",
+                "$env:LOCALAPPDATA\Cursor",
+                "$env:LOCALAPPDATA\Code - Insiders",
+                "$env:LOCALAPPDATA\VSCodium"
+            )
+        }
+
+        foreach ($path in $searchPaths) {
+            if (Test-Path $path) {
+                $installations += @{
+                    Path = $path
+                    Type = Split-Path $path -Leaf
+                    StorageFiles = @(
+                        (Join-Path $path "User\storage.json"),
+                        (Join-Path $path "User\globalStorage\storage.json")
+                    )
+                    DatabasePaths = @(
+                        "$path\User\workspaceStorage\*\state.vscdb",
+                        "$path\User\globalStorage\*\state.vscdb"
+                    )
+                }
             }
         }
+
+        return $installations
     }
-    
-    return $installations
 }
 
 #endregion

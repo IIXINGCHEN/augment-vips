@@ -100,11 +100,21 @@ function Find-AugmentRestrictionData {
         }
     }
     
-    # Check Cursor installations
-    $cursorPaths = @(
-        "$env:APPDATA\Cursor\User\globalStorage",
-        "$env:LOCALAPPDATA\Cursor\User\globalStorage"
-    )
+    # Check Cursor installations using unified path discovery
+    if ($Global:UtilitiesAvailable -and (Get-Command Get-StandardVSCodePaths -ErrorAction SilentlyContinue)) {
+        $pathInfo = Get-StandardVSCodePaths
+        $cursorBasePaths = $pathInfo.CursorPaths
+        $cursorPaths = @()
+        foreach ($basePath in $cursorBasePaths) {
+            $cursorPaths += Join-Path $basePath "User\globalStorage"
+        }
+    } else {
+        # 回退路径列表
+        $cursorPaths = @(
+            "$env:APPDATA\Cursor\User\globalStorage",
+            "$env:LOCALAPPDATA\Cursor\User\globalStorage"
+        )
+    }
     
     foreach ($basePath in $cursorPaths) {
         if (Test-Path $basePath) {

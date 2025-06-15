@@ -1,3 +1,8 @@
+# Fix-FilePermissions.ps1
+# File Permissions Repair Tool for VS Code/Cursor
+# Fixes file permission issues that prevent proper access to configuration files
+# Version: 2.1.0 - Unified imports refactor
+
 [CmdletBinding()]
 param(
     [switch]$VerboseOutput = $false,
@@ -6,12 +11,23 @@ param(
     [string]$TargetPath = ""
 )
 
-# Standalone logging functions
-function Write-LogInfo { param([string]$Message) Write-Host "[INFO] $Message" -ForegroundColor White }
-function Write-LogSuccess { param([string]$Message) Write-Host "[SUCCESS] $Message" -ForegroundColor Green }
-function Write-LogWarning { param([string]$Message) Write-Host "[WARNING] $Message" -ForegroundColor Yellow }
-function Write-LogError { param([string]$Message) Write-Host "[ERROR] $Message" -ForegroundColor Red }
-function Write-LogDebug { param([string]$Message) if ($VerboseOutput) { Write-Host "[DEBUG] $Message" -ForegroundColor Gray } }
+# Import unified core modules
+$scriptPath = Split-Path -Parent $MyInvocation.MyCommand.Path
+$coreModulesPath = Split-Path $scriptPath -Parent | Join-Path -ChildPath "core"
+$standardImportsPath = Join-Path $coreModulesPath "StandardImports.ps1"
+
+if (Test-Path $standardImportsPath) {
+    . $standardImportsPath
+    Write-LogInfo "Unified core modules loaded successfully"
+} else {
+    # Emergency fallback logging (only when StandardImports unavailable)
+    function Write-LogInfo { param([string]$Message) Write-Host "[INFO] $Message" -ForegroundColor White }
+    function Write-LogSuccess { param([string]$Message) Write-Host "[SUCCESS] $Message" -ForegroundColor Green }
+    function Write-LogWarning { param([string]$Message) Write-Host "[WARNING] $Message" -ForegroundColor Yellow }
+    function Write-LogError { param([string]$Message) Write-Host "[ERROR] $Message" -ForegroundColor Red }
+    function Write-LogDebug { param([string]$Message) if ($VerboseOutput) { Write-Host "[DEBUG] $Message" -ForegroundColor Gray } }
+    Write-LogWarning "StandardImports unavailable, using fallback logging system"
+}
 
 # Set error handling
 $ErrorActionPreference = "Stop"
@@ -343,12 +359,22 @@ function Get-VSCodeDatabaseFiles {
     param()
 
     $files = @()
-    $basePaths = @(
-        "$env:APPDATA\Code",
-        "$env:APPDATA\Cursor",
-        "$env:LOCALAPPDATA\Code",
-        "$env:LOCALAPPDATA\Cursor"
-    )
+
+    # Use unified path discovery function
+    if ($Global:UtilitiesAvailable -and (Get-Command Get-StandardVSCodePaths -ErrorAction SilentlyContinue)) {
+        $pathInfo = Get-StandardVSCodePaths
+        $basePaths = $pathInfo.VSCodeStandard + $pathInfo.CursorPaths
+        Write-LogDebug "Using unified path discovery function, found $($basePaths.Count) base paths"
+    } else {
+        # Fallback path list
+        $basePaths = @(
+            "$env:APPDATA\Code",
+            "$env:APPDATA\Cursor",
+            "$env:LOCALAPPDATA\Code",
+            "$env:LOCALAPPDATA\Cursor"
+        )
+        Write-LogDebug "Using fallback path list"
+    }
 
     foreach ($basePath in $basePaths) {
         if (Test-Path $basePath) {
@@ -453,122 +479,4 @@ if ($MyInvocation.InvocationName -ne '.') {
     Start-PermissionRepair
 }
 
-function Get-VSCodeDatabaseFiles {
-    <#
-    .SYNOPSIS
-        Gets all VS Code and Cursor database and configuration files
-    .EXAMPLE
-        Get-VSCodeDatabaseFiles
-    #>
-    [CmdletBinding()]
-    param()
 
-    $files = @()
-    $basePaths = @(
-        "$env:APPDATA\Code",
-        "$env:APPDATA\Cursor",
-        "$env:LOCALAPPDATA\Code",
-        "$env:LOCALAPPDATA\Cursor"
-    )
-
-    foreach ($basePath in $basePaths) {
-        if (Test-Path $basePath) {
-            Write-LogDebug "Scanning: $basePath"
-
-            # Database files
-            $dbPaths = @(
-                "$basePath\User\globalStorage\state.vscdb",           # Main database
-                "$basePath\User\workspaceStorage\*\state.vscdb",      # Workspace databases
-                "$basePath\User\globalStorage\*\state.vscdb"          # Extension databases
-            )
-
-            foreach ($dbPath in $dbPaths) {
-                if ($dbPath -like "*\*\*") {
-                    # Pattern with wildcards
-                    $dbFiles = Get-ChildItem -Path $dbPath -ErrorAction SilentlyContinue
-                    foreach ($dbFile in $dbFiles) {
-                        $files += $dbFile.FullName
-                    }
-                } else {
-                    # Direct path
-                    if (Test-Path $dbPath) {
-                        $files += $dbPath
-                    }
-                }
-            }
-
-            # Configuration files
-            $configPaths = @(
-                "$basePath\User\storage.json",
-                "$basePath\User\globalStorage\storage.json",
-                "$basePath\User\settings.json"
-            )
-
-            foreach ($configPath in $configPaths) {
-                if (Test-Path $configPath) {
-                    $files += $configPath
-                }
-            }
-        }
-    }
-
-    Write-LogInfo "Found $($files.Count) VS Code/Cursor files to check"
-    return $files
-}
-
-function Start-PermissionRepair {
-    <#
-    .SYNOPSIS
-        Main function to start permission repair process
-    .EXAMPLE
-        Start-PermissionRepair
-    #>
-    [CmdletBinding()]
-    param()
-
-    Write-LogInfo "Starting VS Code/Cursor file permission repair..."
-    Write-LogInfo "DryRun: $DryRun, Force: $Force, VerboseOutput: $VerboseOutput"
-
-    try {
-        # Get all relevant files
-        if ($TargetPath) {
-            if (Test-Path $TargetPath) {
-                $filesToCheck = @($TargetPath)
-            } else {
-                Write-LogError "Target path does not exist: $TargetPath"
-                return $false
-            }
-        } else {
-            $filesToCheck = Get-VSCodeDatabaseFiles
-        }
-
-        if ($filesToCheck.Count -eq 0) {
-            Write-LogWarning "No files found to check"
-            return $true
-        }
-
-        # Repair permissions
-        $repairResult = Repair-FilePermissions -FilePaths $filesToCheck
-
-        # Final status
-        if ($repairResult.FailureCount -eq 0) {
-            Write-LogSuccess "All file permissions are correct!"
-            return $true
-        } else {
-            Write-LogWarning "Some files could not be repaired. Check the details above."
-            if ($repairResult.LockedFiles.Count -gt 0) {
-                Write-LogWarning "Recommendation: Close VS Code/Cursor and run with -Force flag"
-            }
-            return $false
-        }
-
-    } catch {
-        Write-LogError "Permission repair failed: $($_.Exception.Message)"
-        return $false
-    }
-}
-
-# Execute main function if script is run directly
-if ($MyInvocation.InvocationName -ne '.') {
-    Start-PermissionRepair
-}

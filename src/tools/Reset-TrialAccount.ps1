@@ -15,22 +15,23 @@ param(
     [switch]$Force = $false
 )
 
-# Import dependencies
+# Import unified core modules
 $scriptPath = Split-Path -Parent $MyInvocation.MyCommand.Path
 $coreModulesPath = Split-Path $scriptPath -Parent | Join-Path -ChildPath "core"
-$loggerPath = Join-Path $coreModulesPath "AugmentLogger.ps1"
+$standardImportsPath = Join-Path $coreModulesPath "StandardImports.ps1"
 
-if (Test-Path $loggerPath) {
-    . $loggerPath
-    Initialize-AugmentLogger -LogDirectory "logs" -LogFileName "trial_account_reset.log" -LogLevel "INFO"
+if (Test-Path $standardImportsPath) {
+    . $standardImportsPath
+    Write-LogInfo "Unified core modules loaded successfully"
 } else {
-    # Fallback logging if main logger not available
+    # Emergency fallback logging (only when StandardImports unavailable)
     function Write-LogInfo { param([string]$Message) Write-Host "[INFO] $Message" -ForegroundColor White }
     function Write-LogSuccess { param([string]$Message) Write-Host "[SUCCESS] $Message" -ForegroundColor Green }
     function Write-LogWarning { param([string]$Message) Write-Host "[WARNING] $Message" -ForegroundColor Yellow }
     function Write-LogError { param([string]$Message) Write-Host "[ERROR] $Message" -ForegroundColor Red }
     function Write-LogDebug { param([string]$Message) if ($Verbose) { Write-Host "[DEBUG] $Message" -ForegroundColor Gray } }
     function Write-LogCritical { param([string]$Message) Write-Host "[CRITICAL] $Message" -ForegroundColor Magenta }
+    Write-LogWarning "StandardImports unavailable, using fallback logging system"
 }
 
 # Set error handling
@@ -46,52 +47,93 @@ $script:TOOL_VERSION = "3.0.0"
 function Find-SupportedApplicationInstallations {
     <#
     .SYNOPSIS
-        Discovers supported application installations
+        Discovers supported application installations (统一版本)
     .DESCRIPTION
-        Scans for VS Code, Cursor, and other supported editor installations
+        使用统一的路径发现逻辑，扫描VS Code、Cursor等支持的编辑器安装
     .EXAMPLE
         Find-SupportedApplicationInstallations
     #>
     [CmdletBinding()]
     param()
-    
+
     Write-LogInfo "Scanning for supported application installations"
-    
-    $standardPaths = @(
-        @{ Path = "$env:APPDATA\Code"; Name = "Visual Studio Code" },
-        @{ Path = "$env:APPDATA\Cursor"; Name = "Cursor IDE" },
-        @{ Path = "$env:APPDATA\Code - Insiders"; Name = "Visual Studio Code Insiders" },
-        @{ Path = "$env:LOCALAPPDATA\Code"; Name = "Visual Studio Code (Local)" },
-        @{ Path = "$env:LOCALAPPDATA\Cursor"; Name = "Cursor IDE (Local)" }
-    )
-    
+
     $installations = @()
-    
-    foreach ($pathInfo in $standardPaths) {
-        $installPath = $pathInfo.Path
-        $appName = $pathInfo.Name
-        
-        if (Test-Path $installPath -PathType Container) {
-            $userPath = Join-Path $installPath "User"
+
+    # 使用统一的安装发现函数
+    if (Get-Command Get-UnifiedVSCodeInstallations -ErrorAction SilentlyContinue) {
+        Write-LogDebug "使用统一安装发现函数"
+        $unifiedInstallations = Get-UnifiedVSCodeInstallations
+
+        # 转换为当前脚本需要的格式
+        foreach ($installation in $unifiedInstallations) {
+            $userPath = Join-Path $installation.Path "User"
             if (Test-Path $userPath -PathType Container) {
                 $installations += @{
-                    ApplicationName = $appName
-                    InstallationPath = $installPath
+                    ApplicationName = $installation.Type
+                    InstallationPath = $installation.Path
                     UserDataPath = $userPath
                     DiscoveryTimestamp = Get-Date
                 }
-                Write-LogSuccess "Found installation: $appName at $installPath"
+                Write-LogSuccess "Found installation: $($installation.Type) at $($installation.Path)"
+            }
+        }
+    } else {
+        # 回退实现（保持兼容性）
+        Write-LogWarning "统一安装发现函数不可用，使用回退实现"
+
+        # 使用统一路径获取函数
+        if ($Global:UtilitiesAvailable -and (Get-Command Get-StandardVSCodePaths -ErrorAction SilentlyContinue)) {
+            $pathInfo = Get-StandardVSCodePaths
+            $allPaths = $pathInfo.VSCodeStandard + $pathInfo.CursorPaths
+
+            $standardPaths = @()
+            foreach ($path in $allPaths) {
+                $name = switch -Wildcard ($path) {
+                    "*\Code" { "Visual Studio Code" }
+                    "*\Cursor" { "Cursor IDE" }
+                    "*\Code - Insiders" { "Visual Studio Code Insiders" }
+                    default { Split-Path $path -Leaf }
+                }
+                $standardPaths += @{ Path = $path; Name = $name }
             }
         } else {
-            Write-LogDebug "Not found: $installPath"
+            # 最终回退路径列表
+            $standardPaths = @(
+                @{ Path = "$env:APPDATA\Code"; Name = "Visual Studio Code" },
+                @{ Path = "$env:APPDATA\Cursor"; Name = "Cursor IDE" },
+                @{ Path = "$env:APPDATA\Code - Insiders"; Name = "Visual Studio Code Insiders" },
+                @{ Path = "$env:LOCALAPPDATA\Code"; Name = "Visual Studio Code (Local)" },
+                @{ Path = "$env:LOCALAPPDATA\Cursor"; Name = "Cursor IDE (Local)" }
+            )
+        }
+
+        foreach ($pathInfo in $standardPaths) {
+            $installPath = $pathInfo.Path
+            $appName = $pathInfo.Name
+
+            if (Test-Path $installPath -PathType Container) {
+                $userPath = Join-Path $installPath "User"
+                if (Test-Path $userPath -PathType Container) {
+                    $installations += @{
+                        ApplicationName = $appName
+                        InstallationPath = $installPath
+                        UserDataPath = $userPath
+                        DiscoveryTimestamp = Get-Date
+                    }
+                    Write-LogSuccess "Found installation: $appName at $installPath"
+                }
+            } else {
+                Write-LogDebug "Not found: $installPath"
+            }
         }
     }
-    
+
     if ($installations.Count -eq 0) {
         Write-LogError "No supported installations found"
         return $null
     }
-    
+
     Write-LogInfo "Discovery completed: $($installations.Count) installation(s) found"
     return $installations
 }
