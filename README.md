@@ -256,9 +256,6 @@ powershell -ExecutionPolicy Bypass -File "Launch-Tools.ps1" -Action trial    # �
 powershell -ExecutionPolicy Bypass -File "Launch-Tools.ps1" -Action analyze  # 风险分析
 ```
 
-### 📚 详细文档
-- [Anti-Detection-Tools-Guide.md](Anti-Detection-Tools-Guide.md) - 完整使用指南（英文）
-- [反检测工具使用指南.md](反检测工具使用指南.md) - 完整使用指南（中文）
 
 ### 🛠️ 可用工具
 所有工具已完全修复并可正常使用：
