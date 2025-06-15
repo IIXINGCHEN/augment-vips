@@ -132,20 +132,72 @@ function Find-AugmentRestrictionData {
     return $foundData
 }
 
+function Invoke-TelemetrySync {
+    <#
+    .SYNOPSIS
+        Synchronizes telemetry IDs to fix inconsistencies
+    .DESCRIPTION
+        Uses the main installer to perform telemetry synchronization
+    #>
+    Write-LogInfo "Synchronizing telemetry IDs to prevent future restrictions..."
+
+    $mainInstallerPath = Join-Path $PSScriptRoot "install.ps1"
+
+    if (-not (Test-Path $mainInstallerPath)) {
+        Write-LogWarning "Main installer not found at: $mainInstallerPath"
+        Write-LogWarning "Skipping telemetry synchronization"
+        return @{ Success = $false; Message = "Main installer not found" }
+    }
+
+    try {
+        Write-LogInfo "Running telemetry synchronization via main installer..."
+
+        # Use the main installer's modify-ids operation
+        $syncParams = @(
+            "-Operation", "modify-ids"
+        )
+
+        if ($DryRun) {
+            $syncParams += "-DryRun"
+        }
+
+        if ($VerboseOutput) {
+            $syncParams += "-VerboseOutput"
+        }
+
+        $syncParams += "-Interactive:$false"
+
+        $syncResult = & $mainInstallerPath @syncParams 2>&1
+
+        if ($LASTEXITCODE -eq 0) {
+            Write-LogSuccess "Telemetry synchronization completed successfully"
+            return @{ Success = $true; Message = "Telemetry synchronized successfully via main installer" }
+        } else {
+            Write-LogWarning "Telemetry synchronization completed with issues (exit code: $LASTEXITCODE)"
+            return @{ Success = $false; Message = "Sync completed with warnings (exit code: $LASTEXITCODE)" }
+        }
+
+    } catch {
+        Write-LogError "Failed to run telemetry synchronization: $($_.Exception.Message)"
+        return @{ Success = $false; Message = "Sync failed: $($_.Exception.Message)" }
+    }
+}
+
 function Remove-AugmentRestrictionData {
     <#
     .SYNOPSIS
         Removes Augment data that causes account restrictions
     #>
     param([hashtable]$FoundData)
-    
+
     Write-LogInfo "Removing Augment restriction data..."
-    
+
     $removalResult = @{
         Success = $true
         ItemsRemoved = 0
         ErrorsEncountered = 0
         Details = @()
+        TelemetrySync = @{ Success = $false; Message = "Not attempted" }
     }
     
     try {
@@ -237,13 +289,32 @@ function Remove-AugmentRestrictionData {
         if ($removalResult.ErrorsEncountered -gt 0) {
             $removalResult.Success = $false
         }
-        
+
+        # Perform telemetry synchronization after cleanup
+        if ($removalResult.Success -or $Force) {
+            Write-LogInfo "Performing telemetry ID synchronization to prevent future restrictions..."
+            $telemetryResult = Invoke-TelemetrySync
+            $removalResult.TelemetrySync = $telemetryResult
+
+            if ($telemetryResult.Success) {
+                $removalResult.Details += "Telemetry synchronization: SUCCESS"
+                Write-LogSuccess "Telemetry IDs synchronized successfully"
+            } else {
+                $removalResult.Details += "Telemetry synchronization: $($telemetryResult.Message)"
+                Write-LogWarning "Telemetry synchronization had issues: $($telemetryResult.Message)"
+                # Don't fail the entire operation for telemetry sync issues
+            }
+        } else {
+            Write-LogInfo "Skipping telemetry synchronization due to previous errors"
+            $removalResult.TelemetrySync = @{ Success = $false; Message = "Skipped due to previous errors" }
+        }
+
     } catch {
         $removalResult.Success = $false
         $removalResult.Details += "Critical error: $($_.Exception.Message)"
         Write-LogError "Critical error during removal: $($_.Exception.Message)"
     }
-    
+
     return $removalResult
 }
 
@@ -268,15 +339,25 @@ function Show-Summary {
         Write-Host "  Items processed: $($RemovalResult.ItemsRemoved)" -ForegroundColor White
         Write-Host "  Errors encountered: $($RemovalResult.ErrorsEncountered)" -ForegroundColor White
         
+        # Show telemetry sync results
+        if ($RemovalResult.TelemetrySync) {
+            Write-Host "`nTELEMETRY SYNCHRONIZATION:" -ForegroundColor Yellow
+            $syncStatusColor = if ($RemovalResult.TelemetrySync.Success) { "Green" } else { "Yellow" }
+            $syncStatusText = if ($RemovalResult.TelemetrySync.Success) { "SUCCESS" } else { "PARTIAL/SKIPPED" }
+            Write-Host "  Status: $syncStatusText" -ForegroundColor $syncStatusColor
+            Write-Host "  Message: $($RemovalResult.TelemetrySync.Message)" -ForegroundColor White
+        }
+
         if ($RemovalResult.Details.Count -gt 0) {
             Write-Host "`nDETAILS:" -ForegroundColor Yellow
             foreach ($detail in $RemovalResult.Details) {
                 Write-Host "  - $detail" -ForegroundColor White
             }
         }
-        
+
         if ($RemovalResult.Success -and -not $DryRun) {
             Write-Host "`n[SUCCESS] Account restriction fix completed!" -ForegroundColor Green
+            Write-Host "Telemetry IDs have been synchronized to prevent future restrictions." -ForegroundColor Green
             Write-Host "Please restart VS Code/Cursor to apply changes." -ForegroundColor Green
             Write-Host "The 'Your account has been restricted' error should now be resolved." -ForegroundColor Green
         } elseif ($DryRun) {

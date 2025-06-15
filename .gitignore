@@ -32,6 +32,17 @@ REAL_TIME_UNIFICATION_TASK.md
 TODO.md
 CHANGELOG_TEMP.md
 
+# Demo and development directories
+demo/
+demo/*
+
+# Local test files and privacy-sensitive content
+a.txt
+*.txt
+*_local.*
+*_test_*
+*_demo_*
+
 # Temporary test files
 test-*.ps1
 *-test-*.ps1

@@ -21,7 +21,7 @@ param(
         Position = 0,
         HelpMessage = "Operation to perform: clean (database cleanup), modify-ids (telemetry modification), all (both operations), help (show usage)"
     )]
-    [ValidateSet("", "clean", "modify-ids", "all", "help")]
+    [ValidateSet("", "clean", "modify-ids", "timestamp-fix", "all", "help")]
     [Alias("Op", "Action")]
     [string]$Operation = "",
 
@@ -1142,7 +1142,14 @@ function Invoke-EmbeddedWindowsImplementation {
 
 # Test if comprehensive engine components are available
 function Test-ComprehensiveEngineAvailable {
-    # Check if we're in a project structure with the new modules
+    # First check if Complete-Augment-Fix.ps1 is available in src/tools (preferred method)
+    $completeFixScript = Join-Path $PROJECT_ROOT "src\tools\Complete-Augment-Fix.ps1"
+    if (Test-Path $completeFixScript) {
+        Write-LogDebug "Found Complete-Augment-Fix.ps1 in src/tools - using comprehensive fix tool"
+        return $true
+    }
+
+    # Fallback: Check if we're in a project structure with the new modules
     $coreModules = @(
         "src\core\discovery_engine.ps1",
         "src\core\cleanup_strategy_engine.ps1",
@@ -1161,6 +1168,104 @@ function Test-ComprehensiveEngineAvailable {
     return $allModulesAvailable
 }
 
+# Invoke Complete-Augment-Fix.ps1 script
+function Invoke-CompleteAugmentFix {
+    param([string]$ScriptPath, [string]$Operation, [bool]$DryRun, [bool]$Verbose)
+
+    Write-LogInfo "Executing Complete-Augment-Fix.ps1 comprehensive tool..."
+    Write-LogInfo "Script path: $ScriptPath"
+    Write-LogInfo "Operation: $Operation, DryRun: $DryRun, Verbose: $Verbose"
+
+    try {
+        # Map install.ps1 operations to Complete-Augment-Fix.ps1 operations
+        $fixOperation = switch ($Operation.ToLower()) {
+            "clean" { "check" }  # Start with consistency check for clean operation
+            "modify-ids" { "sync-ids" }  # Map to ID synchronization
+            "all" { "all" }  # Complete fix
+            default { "all" }  # Default to complete fix
+        }
+
+        # Build parameters for Complete-Augment-Fix.ps1
+        $params = @(
+            "-Operation", $fixOperation
+        )
+
+        if ($DryRun) {
+            $params += "-DryRun"
+        }
+
+        if ($Verbose) {
+            $params += "-VerboseOutput"
+        }
+
+        # Always create backups
+        $params += "-CreateBackups"
+
+        Write-LogInfo "Calling Complete-Augment-Fix.ps1 with operation: $fixOperation"
+
+        # Execute the script
+        $result = & powershell -ExecutionPolicy Bypass -File $ScriptPath @params
+
+        # Check exit code
+        if ($LASTEXITCODE -eq 0) {
+            Write-LogSuccess "Complete-Augment-Fix.ps1 executed successfully"
+            return $true
+        } else {
+            Write-LogError "Complete-Augment-Fix.ps1 failed with exit code: $LASTEXITCODE"
+            return $false
+        }
+
+    } catch {
+        Write-LogError "Failed to execute Complete-Augment-Fix.ps1: $($_.Exception.Message)"
+        Write-LogWarning "Falling back to legacy implementation..."
+        return $false
+    }
+}
+
+# Invoke fix-account-restriction.ps1 script
+function Invoke-FixAccountRestriction {
+    param([string]$ScriptPath, [bool]$DryRun, [bool]$Verbose)
+
+    Write-LogInfo "Executing fix-account-restriction.ps1 specialized tool..."
+    Write-LogInfo "Script path: $ScriptPath"
+    Write-LogInfo "DryRun: $DryRun, Verbose: $Verbose"
+
+    try {
+        # Build parameters for fix-account-restriction.ps1
+        $params = @()
+
+        if ($DryRun) {
+            $params += "-DryRun"
+        }
+
+        if ($Verbose) {
+            $params += "-VerboseOutput"
+        }
+
+        # Force execution without user confirmation
+        $params += "-Force"
+
+        Write-LogInfo "Calling fix-account-restriction.ps1 for account restriction cleanup"
+
+        # Execute the script
+        $result = & powershell -ExecutionPolicy Bypass -File $ScriptPath @params
+
+        # Check exit code
+        if ($LASTEXITCODE -eq 0) {
+            Write-LogSuccess "fix-account-restriction.ps1 executed successfully"
+            return $true
+        } else {
+            Write-LogError "fix-account-restriction.ps1 failed with exit code: $LASTEXITCODE"
+            return $false
+        }
+
+    } catch {
+        Write-LogError "Failed to execute fix-account-restriction.ps1: $($_.Exception.Message)"
+        Write-LogWarning "Falling back to legacy implementation..."
+        return $false
+    }
+}
+
 # Comprehensive cleaning engine implementation
 function Invoke-ComprehensiveCleaningEngine {
     param([string]$Operation, [bool]$DryRun, [bool]$Verbose)
@@ -1168,7 +1273,23 @@ function Invoke-ComprehensiveCleaningEngine {
     Write-LogInfo "Initializing comprehensive cleaning engine..."
 
     try {
-        # Load core modules
+        # Check if Complete-Augment-Fix.ps1 is available in src/tools (preferred method)
+        $completeFixScript = Join-Path $PROJECT_ROOT "src\tools\Complete-Augment-Fix.ps1"
+        if (Test-Path $completeFixScript) {
+            Write-LogInfo "Using Complete-Augment-Fix.ps1 comprehensive tool from src/tools..."
+            return Invoke-CompleteAugmentFix -ScriptPath $completeFixScript -Operation $Operation -DryRun $DryRun -Verbose $Verbose
+        }
+
+        # Fallback: Check if fix-account-restriction.ps1 is available for clean operations
+        if ($Operation -eq "clean") {
+            $fixAccountScript = Join-Path $PROJECT_ROOT "src\tools\fix-account-restriction.ps1"
+            if (Test-Path $fixAccountScript) {
+                Write-LogInfo "Using fix-account-restriction.ps1 for clean operation..."
+                return Invoke-FixAccountRestriction -ScriptPath $fixAccountScript -DryRun $DryRun -Verbose $Verbose
+            }
+        }
+
+        # Fallback: Load core modules
         $moduleLoadResult = Import-CoreModules
         if (-not $moduleLoadResult) {
             Write-LogError "Failed to load core modules, falling back to legacy implementation"

@@ -61,6 +61,49 @@ $Global:DefaultConfigPaths = @{
 
 #region Core Functions
 
+# Convert PSCustomObject to hashtable (for PowerShell 5.1 compatibility)
+function Convert-PSObjectToHashtable {
+    <#
+    .SYNOPSIS
+        Converts PSCustomObject to hashtable recursively
+    .DESCRIPTION
+        Provides compatibility for older PowerShell versions that don't support -AsHashtable
+    .PARAMETER InputObject
+        The PSCustomObject to convert
+    .EXAMPLE
+        Convert-PSObjectToHashtable $psObject
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [object]$InputObject
+    )
+
+    if ($InputObject -is [PSCustomObject]) {
+        $hashtable = @{}
+        foreach ($property in $InputObject.PSObject.Properties) {
+            $value = $property.Value
+            if ($value -is [PSCustomObject]) {
+                $hashtable[$property.Name] = Convert-PSObjectToHashtable $value
+            } elseif ($value -is [Array]) {
+                $hashtable[$property.Name] = @()
+                foreach ($item in $value) {
+                    if ($item -is [PSCustomObject]) {
+                        $hashtable[$property.Name] += Convert-PSObjectToHashtable $item
+                    } else {
+                        $hashtable[$property.Name] += $item
+                    }
+                }
+            } else {
+                $hashtable[$property.Name] = $value
+            }
+        }
+        return $hashtable
+    } else {
+        return $InputObject
+    }
+}
+
 # Initialize configuration manager
 function Initialize-ConfigurationManager {
     <#
@@ -169,7 +212,17 @@ function Load-Configuration {
         $extension = [System.IO.Path]::GetExtension($Path).ToLower()
         switch ($extension) {
             ".json" {
-                $configData = $configContent | ConvertFrom-Json -AsHashtable
+                try {
+                    # Try with -AsHashtable first (PowerShell 6+)
+                    $configData = $configContent | ConvertFrom-Json -AsHashtable
+                } catch {
+                    # Fallback for older PowerShell versions
+                    $configData = $configContent | ConvertFrom-Json
+                    # Convert PSCustomObject to hashtable for consistency
+                    if ($configData -is [PSCustomObject]) {
+                        $configData = Convert-PSObjectToHashtable $configData
+                    }
+                }
             }
             ".xml" {
                 $configData = [xml]$configContent
@@ -484,6 +537,92 @@ function Initialize-ConfigFileWatchers {
 
 #region Convenience Functions
 
+# Initialize configuration paths with project root
+function Initialize-ConfigPaths {
+    <#
+    .SYNOPSIS
+        Initializes configuration paths with the project root directory
+    .DESCRIPTION
+        Sets up the default configuration paths based on the project root
+    .PARAMETER ProjectRoot
+        The root directory of the project
+    .EXAMPLE
+        Initialize-ConfigPaths "C:\Projects\AugmentVIP"
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ProjectRoot
+    )
+
+    try {
+        Write-LogDebug "Initializing configuration paths with project root: $ProjectRoot" -Category "CONFIG"
+
+        # Update default configuration paths with project root
+        $Global:DefaultConfigPaths = @{
+            MainConfig = Join-Path $ProjectRoot "src\config\config.json"
+            Patterns = Join-Path $ProjectRoot "src\config\patterns.json"
+            ProcessConfig = Join-Path $ProjectRoot "src\config\process_config.json"
+        }
+
+        # Set the default config path for the manager
+        $Global:ConfigManager.DefaultConfigPath = Join-Path $ProjectRoot "src\config"
+
+        Write-LogDebug "Configuration paths initialized successfully" -Category "CONFIG"
+        return $true
+
+    } catch {
+        Write-LogError "Failed to initialize configuration paths: $($_.Exception.Message)" -Category "CONFIG"
+        return $false
+    }
+}
+
+# Load Augment configuration
+function Load-AugmentConfig {
+    <#
+    .SYNOPSIS
+        Loads all Augment-specific configuration files
+    .DESCRIPTION
+        Loads the main configuration files needed for Augment VIP operations
+    .EXAMPLE
+        Load-AugmentConfig
+    #>
+    [CmdletBinding()]
+    param()
+
+    try {
+        Write-LogDebug "Loading Augment configuration files" -Category "CONFIG"
+
+        $success = $true
+
+        # Load main configuration files
+        foreach ($configName in $Global:DefaultConfigPaths.Keys) {
+            $configPath = $Global:DefaultConfigPaths[$configName]
+            if (Test-Path $configPath) {
+                if (-not (Load-Configuration -Name $configName -Path $configPath)) {
+                    Write-LogWarning "Failed to load configuration: $configName from $configPath" -Category "CONFIG"
+                    $success = $false
+                }
+            } else {
+                Write-LogWarning "Configuration file not found: $configPath" -Category "CONFIG"
+                $success = $false
+            }
+        }
+
+        if ($success) {
+            Write-LogSuccess "All Augment configuration files loaded successfully" -Category "CONFIG"
+        } else {
+            Write-LogWarning "Some configuration files failed to load" -Category "CONFIG"
+        }
+
+        return $success
+
+    } catch {
+        Write-LogError "Failed to load Augment configuration: $($_.Exception.Message)" -Category "CONFIG"
+        return $false
+    }
+}
+
 # Get main configuration
 function Get-MainConfig {
     [CmdletBinding()]
@@ -549,20 +688,30 @@ function Get-TelemetryConfig {
 
 #endregion
 
-# Export functions for module use
-Export-ModuleMember -Function @(
-    'Initialize-ConfigurationManager',
-    'Load-Configuration',
-    'Get-ConfigurationValue',
-    'Set-ConfigurationValue',
-    'Save-Configuration',
-    'Test-ConfigurationValidation',
-    'Get-AugmentPatterns',
-    'Get-CleanupModes',
-    'Get-ProcessConfig',
-    'Get-SecurityConfig',
-    'Get-ApplicationSettings'
-)
+# Export functions for module use (only when loaded as module)
+if ($MyInvocation.MyCommand.CommandType -eq 'ExternalScript') {
+    # Loaded via dot-sourcing, no need to export
+    Write-LogDebug "ConfigurationManager loaded via dot-sourcing" -Category "CONFIG"
+} else {
+    # Loaded as module, export functions
+    Export-ModuleMember -Function @(
+        'Initialize-ConfigurationManager',
+        'Load-Configuration',
+        'Get-ConfigurationValue',
+        'Set-ConfigurationValue',
+        'Save-Configuration',
+        'Test-ConfigurationValidation',
+        'Initialize-ConfigPaths',
+        'Load-AugmentConfig',
+        'Get-MainConfig',
+        'Get-PatternsConfig',
+        'Get-AugmentPatterns',
+        'Get-CleanupModes',
+        'Get-ProcessConfig',
+        'Get-SecurityConfig',
+        'Get-ApplicationSettings'
+    )
+}
 
 # Module initialization message
 if ($VerbosePreference -eq 'Continue') {

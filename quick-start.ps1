@@ -56,18 +56,26 @@ function Start-QuickReset {
     Write-QuickLog "Starting quick reset operation..."
     
     # Check if main script exists
-    $mainScript = Join-Path $PSScriptRoot "Start-AugmentVIP.ps1"
+    $mainScript = Join-Path $PSScriptRoot "install.ps1"
     if (-not (Test-Path $mainScript)) {
         Write-QuickLog "Main script not found: $mainScript" "ERROR"
         Write-QuickLog "Please ensure you're running from the correct directory" "ERROR"
         return
     }
-    
-    # Prepare parameters
-    $params = @("quick")
-    if ($Preview) { $params += "-Preview" }
-    if ($Auto) { $params += "-Force" }
-    
+
+    # Prepare parameters for install.ps1
+    $params = @()
+    $params += "-Operation"
+    $params += "all"
+    if ($Preview) {
+        $params += "-DryRun"
+    }
+    $params += "-VerboseOutput"
+    if ($Auto) {
+        $params += "-Interactive"
+        $params += $false
+    }
+
     try {
         # Execute main script
         Write-QuickLog "Executing Augment VIP reset..."
